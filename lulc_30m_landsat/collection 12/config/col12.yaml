@@ -1,0 +1,40 @@
+# MapBiomas Coleção 12 — Áreas Urbanizadas (Landsat 30 m)
+# Configuração central. Os scripts leem TUDO daqui: nada de comentar/descomentar código.
+
+collection: 12
+years: [1985, 2025]          # intervalo inclusivo; atualize o ano final quando houver novo ano
+
+# Projeto do Google Cloud usado pelo Earth Engine (cotas e faturamento)
+cloud_project: mapbiomas-brazil
+
+# Contas do Earth Engine. Cada uma roda até `max_concurrent` tarefas ao mesmo tempo.
+# `credentials` é o arquivo salvo por `python -m mb_urban.auth login <nome>`.
+# Em Colab / conta de outra pessoa da equipe, use a conta "default" (login padrão do ee).
+accounts:
+  conta1:
+    credentials: ~/.config/earthengine/mb_urban/conta1.json
+    max_concurrent: 4
+  conta2:
+    credentials: ~/.config/earthengine/mb_urban/conta2.json
+    max_concurrent: 4
+  default:
+    credentials: null        # usa o login padrão do earthengine-api
+    max_concurrent: 4
+
+# Destino dos assets gerados. Troque `destination` para "producao" quando entrar em produção.
+destination: teste
+destinations:
+  teste: projects/jpedrassoli/assets/MB-COLLECTION-12       # A CONFIRMAR no login
+  producao: projects/mapbiomas-brazil/assets/LAND-COVER/COLLECTION-12/URBAN
+
+# Grades
+grids:
+  cartas: projects/mapbiomas-workspace/AUXILIAR/cartas        # cartas 1:250.000 (campo grid_name)
+  cartas_hex: projects/ee-mburb-land/assets/LandsatCol9_Inputs/Cartas_250mil_Hex
+  grid_field: grid_name
+  context_buffer_m: 2        # buffer usado na Col 11 para achar as cartas vizinhas (super carta)
+
+# Fonte do mosaico anual: "on_the_fly" (calculado a partir do Landsat) ou "asset" (pré-processado)
+mosaic:
+  source: on_the_fly
+  asset: null                # ImageCollection com mosaicos pré-processados (quando source = asset)
