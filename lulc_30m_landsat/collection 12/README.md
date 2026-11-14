@@ -14,9 +14,17 @@ mb_urban/
   config.py         leitura da configuração e montagem de caminhos de asset
   auth.py           login e inicialização em várias contas do Earth Engine
   grids.py          cartas 1:250.000, super cartas (vizinhança) e fatias por conta
-notebooks/
-  colab_launcher.ipynb   para a equipe rodar uma fatia do processamento na própria conta
+  landsat.py        coleções Landsat 4–9 (C2): bandas, máscara de nuvem, escala
+  indices.py        índices espectrais e mistura espectral (porte de index_lib.js)
+  mosaic.py         mosaico anual de 42 bandas; fonte "on_the_fly" ou "asset"
+  tasks.py          acompanhamento de tarefas por conta
+notebooks/          um notebook por etapa, rodável localmente (VS Code) ou no Colab
+  01_mosaico.ipynb
+verificacao/        scripts JS para conferir o porte contra a Col 11 no Code Editor
 ```
+
+As saídas dos notebooks são removidas automaticamente nos commits (`nbstripout`),
+para não publicar caminhos, mensagens de erro ou dados de conta.
 
 ## Uso local
 
@@ -36,5 +44,5 @@ destination: teste      # trocar para "producao"
 
 ## Rodar pela equipe (Colab)
 
-Abra `notebooks/colab_launcher.ipynb` no Colab, entre com a sua conta do Earth Engine e informe
-a etapa e a fatia que lhe cabem.
+Abra o notebook da etapa no Colab (direto do GitHub, branch `col12`). O primeiro bloco instala o
+pacote; depois é só entrar com a sua conta do Earth Engine e informar a fatia que lhe cabe.
