@@ -1,6 +1,7 @@
 """Coleções Landsat (Collection 2): seleção, renomeação de bandas, máscara de nuvem e escala.
 
-Porte de `renameBands.js` e `preProcessing_lib.js` (só o que o mosaico da Col 11 usa).
+Porte de `renameBands.js` e `preProcessing_lib.js` na versão de produção da Col 11
+(`collection 11/codes_producao/02_classificacao/users/edimilsonrodriguessantos/mapbiomas/Col10/classificacao/`, commit 671895e5) — só o que o mosaico usa.
 """
 from __future__ import annotations
 

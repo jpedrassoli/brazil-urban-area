@@ -1,6 +1,7 @@
 """Índices espectrais e mistura espectral.
 
-Porte fiel de `collection 11/codes/index_lib.js`. As bandas de entrada têm os nomes
+Porte fiel de `collection 11/codes_producao/02_classificacao/users/edimilsonrodriguessantos/mapbiomas/Col10/classificacao/index_lib.js`
+(versão de produção da Col 11, commit 671895e5). As bandas de entrada têm os nomes
 padronizados BLUE, GREEN, RED, NIR, SWIR1, SWIR2 (reflectância) ou NIR, MIR, TIR (Landsat bruto).
 Cada função recebe uma ee.Image e devolve uma imagem com a(s) nova(s) banda(s).
 """

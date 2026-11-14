@@ -1,6 +1,9 @@
 // Verificação do mosaico: valores do mosaico da Col 11 (JS original) num ponto.
 // Cole no Code Editor do Earth Engine, rode e copie o dicionário impresso no Console
 // para a célula de comparação do notebook 01_mosaico.ipynb.
+//
+// O require abaixo é o módulo usado na produção da Col 11. Cópia pública da mesma versão (commit bf9c98b0):
+// collection 11/codes_producao/02_classificacao/users/edimilsonrodriguessantos/mapbiomas/Col10/classificacao/mosaic_production.js
 
 var mosaicBatch = require('users/edimilsonrodriguessantos/mapbiomas:Col10/classificacao/mosaic_production.js');
 

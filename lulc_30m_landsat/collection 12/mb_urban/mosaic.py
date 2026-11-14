@@ -1,7 +1,8 @@
 """Mosaico anual de 42 bandas usado pela classificação.
 
 Duas fontes, escolhidas em config (`mosaic.source`), que entregam a MESMA imagem:
-  - "on_the_fly": calculado do Landsat na hora (porte fiel de mosaic_production.js, Col 10/11);
+  - "on_the_fly": calculado do Landsat na hora — porte fiel de `mosaic_production.js` na versão de
+    produção da Col 11 (`collection 11/codes_producao/02_classificacao/users/edimilsonrodriguessantos/mapbiomas/Col10/classificacao/mosaic_production.js`, commit bf9c98b0);
   - "asset":      lido de uma ImageCollection de mosaicos pré-processados (propriedade `year`).
 
 O resto do pipeline só chama `get(year, roi)` e não sabe qual fonte foi usada.

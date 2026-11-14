@@ -1,7 +1,9 @@
 # Coleção 12 — Áreas Urbanizadas (Landsat 30 m)
 
-Migração para Python do pipeline da [Coleção 11](../collection%2011/codes), que rodava em JavaScript
-no Code Editor do Google Earth Engine.
+Migração para Python do pipeline da Coleção 11, que rodava em JavaScript no Code Editor do Google
+Earth Engine. **Ponto de partida:** as versões exatas de produção da Col 11, auditadas e publicadas em
+[`collection 11/codes_producao`](../collection%2011/codes_producao). Cada módulo Python cita o arquivo
+e o commit de produção que porta.
 
 > **Em desenvolvimento** na branch `col12`. Os módulos são portados etapa por etapa e
 > conferidos contra os resultados da Coleção 11 antes de qualquer otimização.
@@ -20,7 +22,7 @@ mb_urban/
   tasks.py          acompanhamento de tarefas por conta
 notebooks/          um notebook por etapa, rodável localmente (VS Code) ou no Colab
   01_mosaico.ipynb
-verificacao/        scripts JS para conferir o porte contra a Col 11 no Code Editor
+verificacao/        scripts JS para conferir o porte contra a versão de produção da Col 11 no Code Editor
 ```
 
 As saídas dos notebooks são removidas automaticamente nos commits (`nbstripout`),
