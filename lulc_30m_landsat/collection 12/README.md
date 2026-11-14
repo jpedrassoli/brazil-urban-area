@@ -28,23 +28,69 @@ verificacao/        scripts JS para conferir o porte contra a versão de produç
 As saídas dos notebooks são removidas automaticamente nos commits (`nbstripout`),
 para não publicar caminhos, mensagens de erro ou dados de conta.
 
-## Uso local
+## Como rodar com a sua conta
+
+Qualquer pessoa com uma conta do Google Earth Engine pode rodar as etapas, no Colab ou no próprio
+computador.
+
+### Antes de começar
+
+- **Conta do Earth Engine** ligada a um **projeto do Google Cloud** registrado para uso do Earth Engine.
+- **Permissão de escrita** na pasta de assets onde os resultados serão gravados (campo `destinations`
+  da configuração). Para testes, use uma pasta sua.
+
+### Opção 1 — Colab (sem instalar nada)
+
+1. Abra o notebook da etapa (`notebooks/`) no Colab: no GitHub, abra o arquivo e troque
+   `github.com` por `githubtocolab.com` na barra de endereço.
+2. Rode o primeiro bloco: ele baixa o código e instala o pacote.
+3. Rode o bloco de conta: abre o login do Google para você autorizar a sua conta do Earth Engine.
+4. Ajuste os parâmetros do notebook (carta, ano, fatia) e siga os blocos em ordem.
+
+### Opção 2 — no seu computador
 
 ```bash
+git clone -b col12 https://github.com/jpedrassoli/brazil-urban-area.git
+cd brazil-urban-area
 pip install -e "lulc_30m_landsat/collection 12"
-python -m mb_urban.auth login conta1     # uma vez por conta
-python -m mb_urban.auth check conta1
+earthengine authenticate                      # login padrão do Earth Engine
+python -m mb_urban.auth check default         # confere projeto e pasta de destino
 ```
 
-## Teste → produção
+Depois abra os notebooks no VS Code ou no Jupyter e use a conta `default`.
+
+**Várias contas na mesma máquina.** Para rodar em paralelo com mais de uma conta, cadastre cada uma
+em `accounts` na configuração (nome e arquivo de credencial) e faça o login de cada uma:
+
+```bash
+python -m mb_urban.auth login minha_conta_1
+python -m mb_urban.auth login minha_conta_2
+```
+
+### Sua própria configuração
+
+O arquivo `config/col12.yaml` traz os valores do projeto. Para usar outro projeto do Cloud ou outra
+pasta de destino sem alterar o arquivo versionado, copie-o, edite a cópia e aponte para ela:
+
+```bash
+# Linux/macOS
+export MB_URBAN_CONFIG=/caminho/para/minha_config.yaml
+# Windows (PowerShell)
+$env:MB_URBAN_CONFIG = "C:\caminho\para\minha_config.yaml"
+```
+
+Campos que normalmente mudam: `cloud_project`, `accounts` e `destinations`.
+
+### Dividir o processamento entre pessoas ou contas
+
+As etapas trabalham por carta 1:250.000. Os notebooks aceitam uma **fatia** (por exemplo, fatia 2 de
+5): cada pessoa ou conta roda a sua fatia, e todas gravam no mesmo destino. Combine antes quem fica
+com qual fatia e confira se todas as contas têm permissão de escrita no destino.
+
+### Teste → produção
 
 O destino dos assets fica em `config/col12.yaml`:
 
 ```yaml
 destination: teste      # trocar para "producao"
 ```
-
-## Rodar pela equipe (Colab)
-
-Abra o notebook da etapa no Colab (direto do GitHub, branch `col12`). O primeiro bloco instala o
-pacote; depois é só entrar com a sua conta do Earth Engine e informar a fatia que lhe cabe.
