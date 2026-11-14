@@ -38,3 +38,4 @@ grids:
 mosaic:
   source: on_the_fly
   asset: null                # ImageCollection com mosaicos pré-processados (quando source = asset)
+  encoding: col12            # col12 = sem saturação das frações/NDFI; col11 = idêntico à Col 11 (só para conferência)

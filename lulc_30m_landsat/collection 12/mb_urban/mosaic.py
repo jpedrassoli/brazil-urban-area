@@ -6,9 +6,12 @@ Duas fontes, escolhidas em config (`mosaic.source`), que entregam a MESMA imagem
 
 O resto do pipeline só chama `get(year, roi)` e não sabe qual fonte foi usada.
 
-Observação herdada da Col 11 (mantida para reprodutibilidade): as bandas são gravadas como
-uint16 de (valor + 1) * 1000. Para bandas que já estão em 0-100 (frações SMA) ou 0-200 (NDFI)
-isso estoura o limite do uint16 e satura em 65535. Candidato a correção na Col 12.
+Codificação das bandas (config `mosaic.encoding`):
+  - "col11": igual à Col 11 — TODAS as bandas viram uint16 de (valor + 1) * 1000. Nas bandas que
+    já vêm em 0-100 (frações de mistura) ou 0-200 (NDFI) isso passa de 65535 e satura, perdendo
+    informação. Use só para conferir a reprodução da Col 11.
+  - "col12" (padrão): índices e reflectâncias seguem (valor + 1) * 1000; frações e NDFI viram
+    valor * 10 (0-1000 e 0-2000), sem saturar.
 """
 from __future__ import annotations
 
@@ -34,16 +37,32 @@ BANDS = MEDIAN_BANDS + [
 ]
 
 
+# Bandas que já saem em escala 0-100 (frações) ou 0-200 (NDFI)
+BYTE_BANDS = ["NDFI", "GV", "NPV", "SOIL", "CLOUD", "GVS", "SHADE", "SUBS", "VEG", "DARK"]
+ENCODINGS = ("col11", "col12")
+
+
 def _scale(img: ee.Image) -> ee.Image:
     return img.add(1).multiply(1000).toUint16()
 
 
-def on_the_fly(year: int, roi: ee.Geometry) -> ee.Image:
+def _encode_median(median: ee.Image, encoding: str) -> ee.Image:
+    if encoding == "col11":
+        return _scale(median)
+    if encoding != "col12":
+        raise ValueError(f"mosaic.encoding deve ser um de {ENCODINGS}")
+    continuous = [b for b in MEDIAN_BANDS if b not in BYTE_BANDS]
+    encoded = _scale(median.select(continuous)).addBands(
+        median.select(BYTE_BANDS).multiply(10).toUint16())
+    return encoded.select(MEDIAN_BANDS)
+
+
+def on_the_fly(year: int, roi: ee.Geometry, encoding: str = "col12") -> ee.Image:
     """Mosaico calculado a partir das coleções Landsat (mosaicGenByBandsLists da Col 11)."""
     sr = landsat.surface_reflectance(year, roi).map(indices.sr_feature_space)
     raw = landsat.raw(year, roi).map(indices.raw_feature_space)
 
-    sr_median = _scale(sr.select(MEDIAN_BANDS).median())
+    sr_median = _encode_median(sr.select(MEDIAN_BANDS).median(), encoding)
 
     sr_1090 = _scale(sr.select(P1090_BANDS).reduce(ee.Reducer.percentile([10, 90])))
     sr_dif = (sr_1090.select([1, 3]).subtract(sr_1090.select([0, 2]))
@@ -73,14 +92,14 @@ def get(year: int, roi: ee.Geometry, cfg: dict | None = None) -> ee.Image:
     cfg = cfg or config.load()
     m = cfg["mosaic"]
     if m["source"] == "on_the_fly":
-        img = on_the_fly(year, roi)
+        img = on_the_fly(year, roi, m.get("encoding", "col12"))
     elif m["source"] == "asset":
         if not m.get("asset"):
             raise ValueError("mosaic.source = asset, mas mosaic.asset está vazio na configuração")
         img = from_asset(year, roi, m["asset"])
     else:
         raise ValueError(f"mosaic.source desconhecido: {m['source']}")
-    return img.set("year", year, "mosaic_source", m["source"])
+    return img.set("year", year, "mosaic_source", m["source"], "mosaic_encoding", m.get("encoding", "col12"))
 
 
 def export_to_asset(year: int, region: ee.Geometry, name: str, folder: str = "mosaics",
@@ -90,7 +109,9 @@ def export_to_asset(year: int, region: ee.Geometry, name: str, folder: str = "mo
     Gera a coleção que depois pode ser usada com `mosaic.source: asset`.
     """
     cfg = cfg or config.load()
-    img = on_the_fly(year, region).set("year", year, "collection", cfg["collection"])
+    encoding = cfg["mosaic"].get("encoding", "col12")
+    img = on_the_fly(year, region, encoding).set(
+        "year", year, "collection", cfg["collection"], "mosaic_encoding", encoding)
     asset_id = config.asset_path(folder, name, cfg=cfg)
     return ee.batch.Export.image.toAsset(
         image=img, description=name, assetId=asset_id, region=region,
