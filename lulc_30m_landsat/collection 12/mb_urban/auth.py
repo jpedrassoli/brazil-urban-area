@@ -62,9 +62,10 @@ def init(name: str = "default", cfg: dict | None = None) -> str:
         None,
         refresh_token=data["refresh_token"],
         token_uri=ee.oauth.TOKEN_URI,
-        client_id=data.get("client_id"),
-        client_secret=data.get("client_secret"),
-        scopes=data.get("scopes"),
+        client_id=data.get("client_id", ee.oauth.CLIENT_ID),
+        client_secret=data.get("client_secret", ee.oauth.CLIENT_SECRET),
+        scopes=data.get("scopes", ee.oauth.SCOPES),
+        quota_project_id=project,
     )
     ee.Initialize(credentials=creds, project=project)
     return name
