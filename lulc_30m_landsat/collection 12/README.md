@@ -11,11 +11,11 @@ e o commit de produção que porta.
 ## Estrutura
 
 ```
-config/col12.yaml   configuração central (anos, contas, destino dos assets, grades, mosaico)
+config/col12.yaml   configuração central (anos, projeto, destino dos assets, grades, mosaico)
 mb_urban/
   config.py         leitura da configuração e montagem de caminhos de asset
-  auth.py           login e inicialização em várias contas do Earth Engine
-  grids.py          cartas 1:250.000, super cartas (vizinhança) e fatias por conta
+  auth.py           login e inicialização do Earth Engine
+  grids.py          cartas 1:250.000, super cartas (vizinhança) e divisão em lotes
   landsat.py        coleções Landsat 4–9 (C2): bandas, máscara de nuvem, escala
   indices.py        índices espectrais e mistura espectral (porte de index_lib.js)
   mosaic.py         mosaico anual de 42 bandas; fonte "on_the_fly" ou "asset"
@@ -45,7 +45,7 @@ computador.
    `github.com` por `githubtocolab.com` na barra de endereço.
 2. Rode o primeiro bloco: ele baixa o código e instala o pacote.
 3. Rode o bloco de conta: abre o login do Google para você autorizar a sua conta do Earth Engine.
-4. Ajuste os parâmetros do notebook (carta, ano, fatia) e siga os blocos em ordem.
+4. Ajuste os parâmetros do notebook (carta, ano) e siga os blocos em ordem.
 
 ### Opção 2 — no seu computador
 
@@ -59,14 +59,6 @@ python -m mb_urban.auth check default         # confere projeto e pasta de desti
 
 Depois abra os notebooks no VS Code ou no Jupyter e use a conta `default`.
 
-**Várias contas na mesma máquina.** Para rodar em paralelo com mais de uma conta, cadastre cada uma
-em `accounts` na configuração (nome e arquivo de credencial) e faça o login de cada uma:
-
-```bash
-python -m mb_urban.auth login minha_conta_1
-python -m mb_urban.auth login minha_conta_2
-```
-
 ### Sua própria configuração
 
 O arquivo `config/col12.yaml` traz os valores do projeto. Para usar outro projeto do Cloud ou outra
@@ -79,13 +71,7 @@ export MB_URBAN_CONFIG=/caminho/para/minha_config.yaml
 $env:MB_URBAN_CONFIG = "C:\caminho\para\minha_config.yaml"
 ```
 
-Campos que normalmente mudam: `cloud_project`, `accounts` e `destinations`.
-
-### Dividir o processamento entre pessoas ou contas
-
-As etapas trabalham por carta 1:250.000. Os notebooks aceitam uma **fatia** (por exemplo, fatia 2 de
-5): cada pessoa ou conta roda a sua fatia, e todas gravam no mesmo destino. Combine antes quem fica
-com qual fatia e confira se todas as contas têm permissão de escrita no destino.
+Campos que normalmente mudam: `cloud_project` e `destinations`.
 
 ### Teste → produção
 

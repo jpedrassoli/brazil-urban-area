@@ -58,7 +58,21 @@ de 2026-05-25, a lista de cartas. São parâmetros de cada lote, não mudanças 
 | `veg_urb.js` | `Col11/vegUrb/veg_urb_rev6.js` | mesmo código, só a geometria de teste |
 | `buildingsAndBuffers.js`, `referenceLayers.js` | cópias públicas de `users/mayhirye/Publ` | mesmo código (só a geometria de teste). São da Col 10: a máscara espacial `Mask_Spatial_v9` foi reaproveitada na Col 11 |
 
+## Como as amostras chegaram à classificação
+
+1. `samplesCreation_v4.js` sorteia 250 pontos por classe em cada super carta, sobre as áreas estáveis
+   das Coleções 6 a 10, em quatro janelas (`1985_to_2020`, `1993_to_2020`, `2001_to_2020`,
+   `2009_to_2020`).
+2. Os lotes exportados viraram as tabelas `stable_samples_by_range_v2`, `v2_1` e `v2_1_adhoc`.
+3. `visSamplesByGrid_v2.js` junta as três e separa, por janela e por urbano/não urbano, **80% para
+   treino** (`type = classification`) e **20% para validação** (`type = validation`), gravando
+   `stable_samples_by_range_merged_v1`. É a tabela que a classificação lê.
+
 ## Lacunas conhecidas
+
+- **Montagem de `stable_samples_by_range_v2`, `v2_1` e `v2_1_adhoc`:** os scripts de amostragem
+  ad hoc (`samplesCreation_v4_adhoc*.js`) e a junção dos lotes em `v2` não foram datados nem
+  incluídos. A tabela final (`merged_v1`) existe e é a usada.
 
 - **Limiares da Col 11:** a tabela `col11/thresholdMedianByCarta` saiu de um notebook Python
   (ROC / índice de Youden por carta). O notebook em `../codes/accPreProcessingThreshold.ipynb` é a

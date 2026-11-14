@@ -36,6 +36,8 @@ STAGES = [
         (ED, "Col11/preProcessing/samplesCreation_v4.js", "stableSamples.js"),
         (ED, "mb_batch/collections.js", "mb_batch/collections.js"),
         (ED, "mb_batch/listsAndDicts.js", "mb_batch/listsAndDicts.js"),
+        # junta stable_samples_by_range_v2 + v2_1 + v2_1_adhoc e separa 80% treino / 20% validação
+        (ED, "Col11/preProcessing/visSamplesByGrid_v2.js", "-"),
     ]),
     ("02_classificacao", "2026-05-16T13:30:00Z",
      "PROB-COL11-V1 e coleções de classificação (2026-05-15 a 2026-05-26); versão de produção do "
