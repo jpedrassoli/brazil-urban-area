@@ -113,3 +113,8 @@ _Sequence to run the codes for urban areas classification_
 -> **referenceLayers.js**\
 -> **posProcessingFilter.js**\
 -> **veg_urb.js**
+
+
+## Auditoria: versões exatas de produção
+
+A pasta [codes_producao](codes_producao) traz os scripts do Code Editor exatamente como estavam quando a Coleção 11 foi produzida (inclusive os módulos chamados por `require`), datados pelos assets gerados, com um manifesto (commit e sha256 de cada arquivo) e as diferenças em relação aos scripts desta pasta `codes`.
