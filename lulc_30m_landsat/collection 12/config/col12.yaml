@@ -11,10 +11,10 @@ cloud_project: mapbiomas-brazil
 # `credentials` é o arquivo salvo por `python -m mb_urban.auth login <nome>`.
 # Em Colab / conta de outra pessoa da equipe, use a conta "default" (login padrão do ee).
 accounts:
-  conta1:
+  conta1:                    # conta Gmail — dona de users/pedrassoli_julio
     credentials: ~/.config/earthengine/mb_urban/conta1.json
     max_concurrent: 4
-  conta2:
+  conta2:                    # conta USP — users/pedrassoli-usp
     credentials: ~/.config/earthengine/mb_urban/conta2.json
     max_concurrent: 4
   default:
@@ -24,7 +24,7 @@ accounts:
 # Destino dos assets gerados. Troque `destination` para "producao" quando entrar em produção.
 destination: teste
 destinations:
-  teste: projects/jpedrassoli/assets/MB-COLLECTION-12       # A CONFIRMAR no login
+  teste: users/pedrassoli_julio/MB-COLLECTION-12            # pasta de assets pessoal (conta1)
   producao: projects/mapbiomas-brazil/assets/LAND-COVER/COLLECTION-12/URBAN
 
 # Grades
