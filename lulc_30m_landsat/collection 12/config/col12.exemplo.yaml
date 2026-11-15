@@ -137,6 +137,21 @@ postprocess:
   mask_only: false
   mask_margin_px: 20
 
+# Limiar ótimo por carta (porte de bestProb_preProcessingByGridByYear.js + accPreProcessingThreshold.ipynb +
+# meanThresholdsByGridAsImage.js). Gera a imagem que o pré-filtro usa; enquanto não houver a da Col 12,
+# postprocess.threshold_image continua apontando para a da Col 11.
+thresholds:
+  folder: limiares
+  version: 1
+  probability: raw             # raw = probabilidade do ano; temporal_mean = média ±2 anos
+  validation: table            # pontos de validação da tabela de amostras (janela do ano)
+  urban_points: 220            # por super carta e ano (Col 10)
+  balance: 2                   # não urbanos = urban_points × balance
+  percentile: 0.15             # cutPercentile = quantil 15% dos urbanos × 0,95 (banda usada pelo pré-filtro)
+  percentile_factor: 0.95
+  fill_divisor: 1.25           # limiar ausente = cutPercentile / 1,25
+  aggregate: median            # median (Col 11) ou mean (Col 10)
+
 # Escopo das rodadas: "desenvolvimento" (cartas_teste) ou "brasil" (todas as cartas da grade hexagonal)
 scope: desenvolvimento
 cartas_teste:
