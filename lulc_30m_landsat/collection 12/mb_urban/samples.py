@@ -150,8 +150,36 @@ def carta_export_spec(carta: str, cfg: dict | None = None):
     fc = split_train_validation(ee.FeatureCollection([create(carta, w, cfg) for w in windows(cfg)]).flatten(), cfg)
     name = f"amostras_{carta}"
     asset_id = carta_table_id(carta, cfg)
+    # alternativa se faltar tempo/memória (cartas grandes da Amazônia): uma tarefa por janela, mesmo resultado
+    alternativa = lambda: [window_export_spec(carta, w, cfg) for w in windows(cfg)]
+    return (name, asset_id, lambda: ee.batch.Export.table.toAsset(
+        collection=fc, description=config.task_description(name, cfg), assetId=asset_id), alternativa)
+
+
+def window_table_id(carta: str, window: str, cfg: dict) -> str:
+    return config.asset_path(cfg["samples"]["build_folder"], f"amostras_{carta}__{window}", cfg=cfg)
+
+
+def window_export_spec(carta: str, window: str, cfg: dict):
+    """Amostras de uma carta numa janela só (parte da alternativa de `carta_export_spec`).
+
+    O sorteio é o mesmo da tarefa inteira (mesma semente por janela); a separação treino/validação usa
+    randomColumn() por janela, como na tarefa inteira."""
+    fc = split_train_validation(create(carta, window, cfg), cfg)
+    name = f"amostras_{carta}__{window}"
+    asset_id = window_table_id(carta, window, cfg)
     return (name, asset_id, lambda: ee.batch.Export.table.toAsset(
         collection=fc, description=config.task_description(name, cfg), assetId=asset_id))
+
+
+def carta_sources(carta: str, cfg: dict) -> list[str] | None:
+    """Tabelas que compõem as amostras da carta: a tabela inteira, ou todas as partes por janela.
+    None se ainda não estiver completa."""
+    from .tasks import asset_exists
+    if asset_exists(carta_table_id(carta, cfg)):
+        return [carta_table_id(carta, cfg)]
+    parts = [window_table_id(carta, w, cfg) for w in windows(cfg)]
+    return parts if all(asset_exists(p) for p in parts) else None
 
 
 def cartas_for_build(cartas: list[str], cfg: dict | None = None) -> list[str]:
@@ -165,7 +193,8 @@ def cartas_for_build(cartas: list[str], cfg: dict | None = None) -> list[str]:
 def merge_export_spec(cartas: list[str], cfg: dict | None = None):
     """Tarefa que junta as tabelas por carta na tabela final (`samples.table`)."""
     cfg = cfg or config.load()
-    fc = ee.FeatureCollection([ee.FeatureCollection(carta_table_id(c, cfg)) for c in cartas]).flatten()
+    sources = [src for c in cartas for src in (carta_sources(c, cfg) or [])]
+    fc = ee.FeatureCollection([ee.FeatureCollection(src) for src in sources]).flatten()
     asset_id = cfg["samples"]["table"]
     name = asset_id.rsplit("/", 1)[-1]
     return (name, asset_id, lambda: ee.batch.Export.table.toAsset(

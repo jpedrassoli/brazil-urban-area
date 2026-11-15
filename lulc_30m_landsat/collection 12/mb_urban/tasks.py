@@ -3,8 +3,9 @@
 - `status` / `summary`: tabela das tarefas de uma conta.
 - `run_queue`: recebe uma lista de tarefas (nome, asset de destino, função que cria a tarefa),
   pula as que já têm asset gravado ou já estão na fila, e inicia as demais respeitando o limite
-  de tarefas simultâneas da conta. Com `wait=True`, fica acompanhando até terminar tudo,
-  reenviando as que falharem (até `retries` vezes). Cada evento é registrado em `logs/`.
+  de tarefas simultâneas da conta. Com `wait=True`, fica acompanhando até terminar tudo e trata as
+  falhas pelo tipo de erro (veja `run_queue`). Cada evento é registrado em `logs/`; falhas que precisam
+  de atenção também em `logs/falhas.jsonl`.
 """
 from __future__ import annotations
 
@@ -125,36 +126,107 @@ def my_tasks(account: str = "default") -> pd.DataFrame:
     return pd.DataFrame([{"id": k, **v} for k, v in reg.items()])
 
 
+# --- tratamento de falhas ----------------------------------------------------------------------
+# Falta de recurso: a mesma tarefa tende a falhar de novo; se houver alternativa (tarefas menores), usa ela.
+RESOURCE_ERRORS = ("computation timed out", "memory limit", "too many pixels", "too many concurrent",
+                   "capacity exceeded", "user memory")
+# Passageiros: vale tentar de novo do mesmo jeito.
+TRANSIENT_ERRORS = ("internal error", "service unavailable", "deadline", "unavailable", "backend error",
+                    "an internal error", "try again")
+
+
+def classify_error(msg: str | None) -> str:
+    """'recurso', 'passageiro' ou 'codigo' (erro de código/dado: não adianta repetir; precisa de correção)."""
+    m = (msg or "").lower()
+    if any(k in m for k in RESOURCE_ERRORS):
+        return "recurso"
+    if any(k in m for k in TRANSIENT_ERRORS) or not m:
+        return "passageiro"
+    return "codigo"
+
+
+def _falha(event: dict, log_name: str) -> None:
+    """Registra falhas que precisam de atenção em logs/falhas.jsonl (lido na revisão diária)."""
+    _log({**event, "fila": log_name}, "falhas")
+
+
 def run_queue(specs, account: str = "default", max_concurrent: int | None = None,
               wait: bool = False, poll_seconds: int = 120, retries: int = 1,
               log_name: str = "fila", cfg: dict | None = None) -> pd.DataFrame:
-    """Envia as tarefas respeitando o limite da conta. `specs`: [(nome, asset_id, criar_tarefa)]."""
+    """Envia as tarefas respeitando o limite da conta.
+
+    `specs`: [(nome, asset_id, criar_tarefa)] ou [(nome, asset_id, criar_tarefa, alternativa)], em que
+    `alternativa()` devolve uma lista de specs menores que produzem o mesmo resultado (ex.: por janela).
+
+    Falhas (com `wait=True`), conforme o tipo de erro (`classify_error`):
+      - recurso (tempo/memória): usa a alternativa, se houver; senão tenta de novo até `retries` vezes;
+      - passageiro: tenta de novo até `retries` vezes;
+      - código/dado: não repete; registra em logs/falhas.jsonl para correção.
+    Tarefas que já estavam na fila (de uma execução anterior) são acompanhadas do mesmo jeito.
+    """
     cfg = cfg or config.load()
     auth.init(account, cfg)
     limit = max_concurrent or cfg["accounts"][account]["max_concurrent"]
     pending = list(specs)
+    by_name = {s[0]: s for s in specs}
     attempts: dict[str, int] = {}
     started: dict[str, str] = {}   # nome -> id da tarefa
     rows = []
+    adopted = False
+
+    def handle_failure(name: str, err: str | None):
+        kind = classify_error(err)
+        spec = by_name.get(name)
+        alt = spec[3] if spec is not None and len(spec) > 3 and spec[3] else None
+        if kind == "recurso" and alt is not None:
+            parts = list(alt())
+            for sp in parts:
+                by_name[sp[0]] = sp
+            pending.extend(parts)
+            _log({"tarefa": name, "acao": f"dividida em {len(parts)} tarefas menores", "erro": err}, log_name)
+            _falha({"tarefa": name, "tipo": kind, "acao": "dividida", "partes": [sp[0] for sp in parts],
+                    "erro": err, "conta": account}, log_name)
+        elif kind in ("recurso", "passageiro") and attempts.get(name, 0) <= retries and spec is not None:
+            pending.append(spec)
+            _log({"tarefa": name, "acao": "reenviada", "erro": err}, log_name)
+        else:
+            _falha({"tarefa": name, "tipo": kind, "acao": "precisa de correção", "erro": err, "conta": account},
+                   log_name)
+            rows.append({"tarefa": name, "estado": "PRECISA DE CORREÇÃO", "erro": err})
 
     while pending or (wait and started):
         reg = _refresh(account)
-        active = {r["tarefa"]: r["estado"] for r in reg.values() if r["estado"] in ("READY", "RUNNING", "INICIADA")}
-        # acompanha as que este processo iniciou
+        active_ids = {r["tarefa"]: tid for tid, r in reg.items() if r["estado"] in ("READY", "RUNNING", "INICIADA")}
+        active = set(active_ids)
         if started:
-            states = {tid: {"state": reg[tid]["estado"], "error_message": reg[tid].get("erro")}
-                      for tid in started.values() if tid in reg}
             for name, tid in list(started.items()):
-                t = states.get(tid, {})
-                if t.get("state") in ("COMPLETED", "FAILED", "CANCELLED"):
-                    _log({"tarefa": name, "estado": t["state"], "erro": t.get("error_message")}, log_name)
-                    rows.append({"tarefa": name, "estado": t["state"], "erro": t.get("error_message")})
+                r = reg.get(tid, {})
+                if r.get("estado") in ("COMPLETED", "FAILED", "CANCELLED"):
+                    _log({"tarefa": name, "estado": r["estado"], "erro": r.get("erro")}, log_name)
+                    rows.append({"tarefa": name, "estado": r["estado"], "erro": r.get("erro")})
                     del started[name]
-                    if t["state"] == "FAILED" and attempts.get(name, 0) <= retries:
-                        pending.append(next(s for s in specs if s[0] == name))
+                    if r["estado"] == "FAILED":
+                        handle_failure(name, r.get("erro"))
+        if wait and not adopted:                           # tarefas já na fila (execução anterior): acompanha
+            last = {}                                      # último estado registrado de cada nome
+            for tid, r in sorted(reg.items(), key=lambda kv: kv[1].get("criada", "")):
+                last[r["tarefa"]] = r
+            for spec in list(pending):                     # falhou antes por recurso e tem alternativa: usa já
+                r = last.get(spec[0])
+                if (r and r["estado"] == "FAILED" and classify_error(r.get("erro")) == "recurso"
+                        and len(spec) > 3 and spec[3] and spec[0] not in active_ids and not asset_exists(spec[1])):
+                    pending.remove(spec)
+                    handle_failure(spec[0], r.get("erro"))
+            for spec in list(pending):
+                if spec[0] in active_ids and spec[0] not in started:
+                    started[spec[0]] = active_ids[spec[0]]
+                    pending.remove(spec)
+                    rows.append({"tarefa": spec[0], "estado": "JÁ NA FILA (acompanhando)", "erro": None})
+            adopted = True
         free = limit - len(active)
         while free > 0 and pending:
-            name, asset_id, make = pending.pop(0)
+            spec = pending.pop(0)
+            name, asset_id, make = spec[0], spec[1], spec[2]
             if name in active:
                 rows.append({"tarefa": name, "estado": "JÁ NA FILA", "erro": None})
                 continue
