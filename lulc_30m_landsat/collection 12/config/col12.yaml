@@ -42,6 +42,11 @@ mosaic:
   source: on_the_fly
   asset: null                # ImageCollection com mosaicos pré-processados; vazio = <destino>/mosaicos
   single_pass: true          # mediana e percentis numa passada por coleção (mesmo resultado, menos trabalho)
+  store_masked: true         # ao gravar, só dentro da máscara espacial + margem (economiza espaço)
+  mask_margin_m: 180         # margem = raio do kernel de vizinhança do pré-filtro (6 px)
+  # cartas de teste com mosaico gravado (as demais usam o mosaico calculado na hora)
+  stored_cartas: [SF-23-Y-C, SD-23-Y-C, SC-25-V-A, SC-24-V-C, SA-20-Z-D, SA-22-X-D, SC-21-Z-C, NA-22-V-B]
+  features_table: amostras_mosaico   # tabelas com os valores do mosaico nos pontos de amostra (por carta)
   encoding: col12            # col12 = sem saturação das frações/NDFI; col11 = idêntico à Col 11 (só para conferência)
 
 # Amostras estáveis (porte de samplesCreation_v4.js + mb_batch/collections.js + visSamplesByGrid_v2.js)

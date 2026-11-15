@@ -123,25 +123,37 @@ def get(year: int, roi: ee.Geometry, cfg: dict | None = None) -> ee.Image:
     return img.set("year", year, "mosaic_source", m["source"], "mosaic_encoding", m.get("encoding", "col12"))
 
 
+def mask_with_margin(cfg: dict) -> ee.Image:
+    """Máscara espacial ampliada pela margem (`mosaic.mask_margin_m`): onde o mosaico é gravado."""
+    p = cfg["postprocess"]
+    margin = cfg["mosaic"].get("mask_margin_m", 180)
+    return ee.Image(p["spatial_mask"]).gte(1).unmask(0).focalMax(margin, "circle", "meters").selfMask()
+
+
 def export_spec(year: int, carta: str, cfg: dict | None = None, region: ee.Geometry | None = None,
-                suffix: str = ""):
+                suffix: str = "", masked: bool | None = None):
     """Tarefa (nome, asset_id, criar_tarefa) que grava o mosaico de uma carta e ano na coleção de mosaicos.
 
     A grade é EPSG:4326 a 30 m, a mesma usada pela classificação: os pixels do asset coincidem com os
-    calculados na hora. Como o valor de cada pixel não depende da região usada para buscar as cenas,
-    os mosaicos de cartas vizinhas se encaixam e formam a super carta.
+    calculados na hora. Região padrão: o hexágono da carta (a área classificada). Com `masked`
+    (padrão: `mosaic.store_masked`), só grava dentro da máscara espacial + margem.
     """
     from . import grids
     cfg = cfg or config.load()
     m = cfg["mosaic"]
     encoding = m.get("encoding", "col12")
-    region = region or grids.carta_geometry(carta, cfg)
+    masked = m.get("store_masked", True) if masked is None else masked
+    region = region or grids.region(carta, cfg)
     name = f"mosaic_{year}_{carta}{suffix}"
     collection = m.get("asset") or config.asset_path("mosaicos", cfg=cfg)
     asset_id = f"{collection}/{name}"
-    img = on_the_fly(year, region, encoding, m.get("single_pass", True)).set({
+    img = on_the_fly(year, region, encoding, m.get("single_pass", True))
+    if masked:
+        img = img.updateMask(mask_with_margin(cfg))
+    img = img.set({
         "year": year, "grid": carta, "collection_id": cfg["collection"], "theme": "Urban Area",
         "product_type": "mosaic", "mosaic_encoding": encoding, "bands": len(BANDS),
+        "masked": int(bool(masked)), "mask_margin_m": m.get("mask_margin_m", 180) if masked else 0,
         "code_version": config.code_version(),
         "system:time_start": ee.Date.fromYMD(year, 1, 1).millis(),
     })

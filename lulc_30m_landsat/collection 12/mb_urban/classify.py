@@ -35,11 +35,16 @@ def window_for_year(year: int) -> str:
     return "2009_to_2020"
 
 
-def training_samples(year: int, context: ee.Geometry, cfg: dict | None = None) -> ee.FeatureCollection:
-    """N urbanas + N*balance não urbanas da super carta, só do conjunto de treino."""
+def training_samples(year: int, context: ee.Geometry, cfg: dict | None = None,
+                     base: ee.FeatureCollection | None = None) -> ee.FeatureCollection:
+    """N urbanas + N*balance não urbanas da super carta, só do conjunto de treino.
+
+    `base`: de onde sortear (padrão: a tabela de amostras). Com a tabela de valores do mosaico de uma
+    carta, o sorteio é o mesmo, porque ela guarda as mesmas amostras com as mesmas propriedades.
+    """
     cfg = cfg or config.load()
     c = cfg["classification"]
-    s = (samples.table(cfg)
+    s = ((base if base is not None else samples.table(cfg))
          .filter(ee.Filter.eq("range", window_for_year(year)))
          .filterBounds(context))
     def draw(fc, n):
@@ -67,8 +72,13 @@ def classify_year(carta: str, year: int, cfg: dict | None = None) -> ee.Image:
     context = grids.context(carta, cfg)
     region = grids.region(carta, cfg)
     img = mosaic.get(year, context, cfg)
-    train = img.sampleRegions(collection=training_samples(year, context, cfg),
-                              scale=30, geometries=True, tileScale=16)
+    table = features_table(carta, cfg) if _use_features_table(carta, cfg) else None
+    if table is not None:
+        # mosaico gravado só na máscara: os valores nos pontos de treino vêm da tabela da carta
+        train = training_samples(year, context, cfg, base=table.filter(ee.Filter.eq("year", year)))
+    else:
+        train = img.sampleRegions(collection=training_samples(year, context, cfg),
+                                  scale=30, geometries=True, tileScale=16)
     # O Random Forest depende da ORDEM das amostras, e sampleRegions devolve uma ordem que muda com
     # o caminho de cálculo (mosaico na hora ou gravado). "sorted" ordena pela coluna `random` e torna o
     # resultado igual nos dois caminhos; "as_returned" mantém a ordem da Col 11 (reprodução).
@@ -80,6 +90,40 @@ def classify_year(carta: str, year: int, cfg: dict | None = None) -> ee.Image:
     probs = img.clip(region).classify(rf).multiply(100).byte().toByte()
     return (probs.arrayPad([4]).arrayProject([0]).arrayFlatten([PROB_BANDS])
             .set("year", year, "grid", carta))
+
+
+def features_table_id(carta: str, cfg: dict) -> str:
+    return config.asset_path(cfg["mosaic"].get("features_table", "amostras_mosaico"), f"amostras_mosaico_{carta}", cfg=cfg)
+
+
+def features_table(carta: str, cfg: dict) -> ee.FeatureCollection:
+    return ee.FeatureCollection(features_table_id(carta, cfg))
+
+
+def _use_features_table(carta: str, cfg: dict) -> bool:
+    m = cfg["mosaic"]
+    return m["source"] == "asset" and m.get("store_masked", True) and carta in m.get("stored_cartas", [])
+
+
+def features_export_spec(carta: str, years: list[int] | None = None, cfg: dict | None = None):
+    """Tarefa que grava, numa tabela, os valores do mosaico (calculado na hora) em todas as amostras
+    (treino e validação) da super carta, para todos os anos. Usada quando o mosaico é gravado só na
+    máscara espacial e os pontos de amostra caem fora dela."""
+    cfg = cfg or config.load()
+    years = years or config.years(cfg)
+    context = grids.context(carta, cfg)
+    m = cfg["mosaic"]
+    parts = []
+    for y in years:
+        pts = samples.table(cfg).filter(ee.Filter.eq("range", window_for_year(y))).filterBounds(context)
+        img = mosaic.on_the_fly(y, context, m.get("encoding", "col12"), m.get("single_pass", True))
+        parts.append(img.sampleRegions(collection=pts, scale=30, geometries=True, tileScale=16)
+                     .map(lambda f, y=y: f.set("year", y)))
+    fc = ee.FeatureCollection(parts).flatten()
+    name = f"amostras_mosaico_{carta}"
+    asset_id = features_table_id(carta, cfg)
+    return (name, asset_id, lambda: ee.batch.Export.table.toAsset(
+        collection=fc, description=config.task_description(name, cfg), assetId=asset_id))
 
 
 def classify_carta(carta: str, years: list[int] | None = None, cfg: dict | None = None) -> ee.Image:
