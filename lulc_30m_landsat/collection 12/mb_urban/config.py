@@ -34,3 +34,9 @@ def destination_root(cfg: dict | None = None) -> str:
 def asset_path(*parts: str, cfg: dict | None = None) -> str:
     """Monta um caminho de asset dentro do destino ativo."""
     return "/".join([destination_root(cfg), *[p.strip("/") for p in parts]])
+
+
+def task_description(name: str, cfg: dict | None = None) -> str:
+    """Nome da tarefa no Earth Engine: prefixo da configuração + nome (máx. 100 caracteres)."""
+    cfg = cfg or load()
+    return (cfg.get("task_prefix", "") + name)[:100]

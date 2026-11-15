@@ -99,7 +99,7 @@ def export_tasks(carta: str, years: list[int] | None = None, output: str | None 
     def make(image, name):
         asset_id = config.asset_path(folder, name, cfg=cfg)
         return (name, asset_id, lambda: ee.batch.Export.image.toAsset(
-            image=image.set(meta), description=name, assetId=asset_id,
+            image=image.set(meta), description=config.task_description(name, cfg), assetId=asset_id,
             region=region, scale=30, maxPixels=1e13))
 
     if output == "per_year":

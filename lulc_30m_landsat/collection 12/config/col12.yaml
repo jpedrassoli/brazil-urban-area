@@ -7,6 +7,9 @@ years: [1985, 2025]          # intervalo inclusivo; atualize o ano final quando 
 # Projeto do Google Cloud usado pelo Earth Engine (cotas e faturamento)
 cloud_project: mapbiomas-brazil
 
+# Prefixo do nome de toda tarefa enviada, para identificar no painel de tarefas de um projeto compartilhado
+task_prefix: urban_col12_
+
 # Contas do Earth Engine. Cada uma roda até `max_concurrent` tarefas ao mesmo tempo.
 # `credentials` é o arquivo salvo por `python -m mb_urban.auth login <nome>`.
 # Em Colab / conta de outra pessoa da equipe, use a conta "default" (login padrão do ee).

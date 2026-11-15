@@ -115,6 +115,6 @@ def export_to_asset(year: int, region: ee.Geometry, name: str, folder: str = "mo
         "year", year, "collection", cfg["collection"], "mosaic_encoding", encoding)
     asset_id = config.asset_path(folder, name, cfg=cfg)
     return ee.batch.Export.image.toAsset(
-        image=img, description=name, assetId=asset_id, region=region,
+        image=img, description=config.task_description(name, cfg), assetId=asset_id, region=region,
         scale=30, maxPixels=1e13,
     )
