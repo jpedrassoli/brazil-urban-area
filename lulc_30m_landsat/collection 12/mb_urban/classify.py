@@ -77,12 +77,28 @@ def classify_carta(carta: str, years: list[int] | None = None, cfg: dict | None 
     return out.set("grid", carta, "years", ee.List(years))
 
 
-def _metadata(cfg: dict) -> dict:
+def _metadata(cfg: dict, carta: str, years: list[int], output: str) -> dict:
+    """Metadados gravados em cada asset: identificação, parâmetros e origem do código."""
+    c = cfg["classification"]
     return {
+        # identificação (mesmos campos da Col 11)
         "collection_id": cfg["collection"], "theme": "Urban Area", "territory": "BRAZIL",
-        "source": "GT URBANO", "mosaic_source": cfg["mosaic"]["source"],
-        "mosaic_encoding": cfg["mosaic"].get("encoding", "col12"),
+        "source": "GT URBANO", "version": c.get("version", 1), "grid": carta,
+        "product_type": "prob", "classes": "1 urbano; 2 vegetação; 3 água; 4 agropecuária",
+        "description": (f"Col {cfg['collection']}; probabilidade de 4 classes (Random Forest, "
+                        f"{c['trees']} árvores); {c['urban_samples']} amostras urbanas / "
+                        f"{c['urban_samples'] * c['balance']} não urbanas; mosaico "
+                        f"{cfg['mosaic']['source']} ({cfg['mosaic'].get('encoding', 'col12')}); "
+                        f"saída {output}"),
+        # parâmetros
+        "output_format": output, "year_first": min(years), "year_last": max(years),
+        "rf_trees": c["trees"], "rf_min_leaf_population": c["min_leaf_population"],
+        "samples_urban": c["urban_samples"], "samples_balance": c["balance"],
         "samples_table": cfg["samples"]["table"],
+        "mosaic_source": cfg["mosaic"]["source"], "mosaic_encoding": cfg["mosaic"].get("encoding", "col12"),
+        # origem
+        "code_version": config.code_version(),
+        "exported_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
     }
 
 
@@ -94,16 +110,18 @@ def export_tasks(carta: str, years: list[int] | None = None, output: str | None 
     output = output or cfg["classification"]["output"]
     folder = cfg["classification"]["folder"]
     region = grids.region(carta, cfg)
-    meta = _metadata(cfg)
 
-    def make(image, name):
+    def make(image, name, yrs):
         asset_id = config.asset_path(folder, name, cfg=cfg)
+        meta = _metadata(cfg, carta, yrs, output)
         return (name, asset_id, lambda: ee.batch.Export.image.toAsset(
             image=image.set(meta), description=config.task_description(name, cfg), assetId=asset_id,
             region=region, scale=30, maxPixels=1e13))
 
     if output == "per_year":
-        return [make(classify_year(carta, y, cfg).set("year", y), f"prob_{carta}_{y}{suffix}") for y in years]
+        return [make(classify_year(carta, y, cfg)
+                     .set("year", y, "system:time_start", ee.Date.fromYMD(y, 1, 1).millis()),
+                     f"prob_{carta}_{y}{suffix}", [y]) for y in years]
     if output == "multiband":
-        return [make(classify_carta(carta, years, cfg), f"prob_{carta}{suffix}")]
+        return [make(classify_carta(carta, years, cfg), f"prob_{carta}{suffix}", years)]
     raise ValueError("classification.output deve ser 'per_year' ou 'multiband'")

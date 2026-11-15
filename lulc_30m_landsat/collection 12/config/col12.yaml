@@ -64,6 +64,7 @@ samples:
 
 # Classificação (porte de classification_batch_v3.js + class_lib.js)
 classification:
+  version: 1                          # versão do produto de probabilidade
   urban_samples: 200
   balance: 4                          # não urbano = urban_samples * balance
   trees: 120

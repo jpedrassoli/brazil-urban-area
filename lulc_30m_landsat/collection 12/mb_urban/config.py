@@ -40,3 +40,17 @@ def task_description(name: str, cfg: dict | None = None) -> str:
     """Nome da tarefa no Earth Engine: prefixo da configuração + nome (máx. 100 caracteres)."""
     cfg = cfg or load()
     return (cfg.get("task_prefix", "") + name)[:100]
+
+
+def code_version() -> str:
+    """Commit do código usado (gravado nos metadados). Marca '-modificado' se houver alterações locais."""
+    import subprocess
+    from . import __version__
+    try:
+        run = lambda *a: subprocess.run(["git", "-C", str(PACKAGE_ROOT), *a], capture_output=True,
+                                        text=True, check=True).stdout.strip()
+        commit = run("rev-parse", "--short", "HEAD")
+        dirty = run("status", "--porcelain", "--", ".")
+        return f"mb_urban {__version__} @ {commit}" + ("-modificado" if dirty else "")
+    except Exception:
+        return f"mb_urban {__version__}"
