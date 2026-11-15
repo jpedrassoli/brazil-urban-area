@@ -24,6 +24,20 @@ from . import config, grids, mosaic, samples
 PROB_BANDS = ["class1_prob", "class2_prob", "class3_prob", "class4_prob"]
 
 
+def classifier(cfg: dict) -> ee.Classifier:
+    """Classificador da configuração (`classification.classifier`): random_forest (Col 11, padrão) ou
+    gradient_tree_boost (teste; parâmetros em `classification.gtb`)."""
+    c = cfg["classification"]
+    kind = c.get("classifier", "random_forest")
+    if kind == "random_forest":
+        return ee.Classifier.smileRandomForest(numberOfTrees=c["trees"], minLeafPopulation=c["min_leaf_population"])
+    if kind == "gradient_tree_boost":
+        g = {"numberOfTrees": 200, "shrinkage": 0.05, "samplingRate": 0.7, "maxNodes": None, "seed": 0,
+             **c.get("gtb", {})}
+        return ee.Classifier.smileGradientTreeBoost(**{k: v for k, v in g.items() if v is not None})
+    raise ValueError("classification.classifier deve ser random_forest ou gradient_tree_boost")
+
+
 def window_for_year(year: int, cfg: dict | None = None) -> str:
     """Janela de amostras usada para cada ano (dictOfRanges de classification_batch_v3).
 
@@ -89,7 +103,7 @@ def classify_year(carta: str, year: int, cfg: dict | None = None) -> ee.Image:
     # resultado igual nos dois caminhos; "as_returned" mantém a ordem da Col 11 (reprodução).
     if c.get("training_order", "sorted") == "sorted":
         train = train.sort("random")
-    rf = (ee.Classifier.smileRandomForest(numberOfTrees=c["trees"], minLeafPopulation=c["min_leaf_population"])
+    rf = (classifier(cfg)
           .train(features=train, classProperty="class", inputProperties=mosaic.BANDS)
           .setOutputMode("MULTIPROBABILITY"))
     probs = img.clip(region).classify(rf).multiply(100).byte().toByte()
@@ -158,6 +172,7 @@ def _metadata(cfg: dict, carta: str, years: list[int], output: str) -> dict:
                         f"saída {output}"),
         # parâmetros
         "output_format": output, "year_first": min(years), "year_last": max(years),
+        "classifier": c.get("classifier", "random_forest"),
         "rf_trees": c["trees"], "rf_min_leaf_population": c["min_leaf_population"],
         "samples_urban": c["urban_samples"], "samples_balance": c["balance"],
         "samples_order": c.get("sample_order", "column"), "training_order": c.get("training_order", "sorted"),
