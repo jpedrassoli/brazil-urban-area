@@ -105,13 +105,17 @@ def on_the_fly(year: int, roi: ee.Geometry, encoding: str = "col12", single_pass
             .select(BANDS))
 
 
-def from_asset(year: int, roi: ee.Geometry, asset: str, encoding: str | None = None,
+def from_asset(year: int, roi: ee.Geometry, asset: str | list[str], encoding: str | None = None,
                version: int | None = None) -> ee.Image:
     """Mosaico pré-processado: imagens da coleção com `year` igual, recortadas pela região.
 
     Com `encoding` e `version`, usa só as imagens com `mosaic_encoding` e `mosaic_version` iguais:
     mosaicos de teste ou de versões anteriores na mesma coleção nunca se misturam."""
-    col = ee.ImageCollection(asset).filter(ee.Filter.eq("year", year)).filterBounds(roi)
+    assets = [asset] if isinstance(asset, str) else list(asset)
+    col = ee.ImageCollection(assets[0])
+    for a in assets[1:]:                       # várias coleções (ex.: anéis gravados em outro projeto)
+        col = col.merge(ee.ImageCollection(a))
+    col = col.filter(ee.Filter.eq("year", year)).filterBounds(roi)
     if encoding:
         col = col.filter(ee.Filter.eq("mosaic_encoding", encoding))
     if version is not None:
@@ -141,7 +145,8 @@ def get(year: int, roi: ee.Geometry, cfg: dict | None = None, carta: str | None 
         # na nossa coleção, filtra pela codificação e pela versão; num mosaico externo (ex.: o oficial)
         # essas propriedades não existem
         own = not m.get("asset")
-        img = from_asset(year, roi, m.get("asset") or config.asset_path("mosaicos", cfg=cfg),
+        sources = [m.get("asset") or config.asset_path("mosaicos", cfg=cfg)] + list(m.get("extra_collections") or [])
+        img = from_asset(year, roi, sources,
                          m.get("encoding", "col12") if own else None, m.get("version", 1) if own else None)
     else:
         raise ValueError(f"mosaic.source desconhecido: {m['source']}")
@@ -167,7 +172,7 @@ def mask_with_margin(cfg: dict) -> ee.Image:
 
 def export_spec(year: int, carta: str, cfg: dict | None = None, region: ee.Geometry | None = None,
                 suffix: str = "", masked: bool | None = None, extra_mask: ee.Image | None = None,
-                extra_props: dict | None = None):
+                extra_props: dict | None = None, collection: str | None = None):
     """Tarefa (nome, asset_id, criar_tarefa) que grava o mosaico de uma carta e ano na coleção de mosaicos.
 
     A grade é EPSG:4326 a 30 m, a mesma usada pela classificação: os pixels do asset coincidem com os
@@ -181,7 +186,7 @@ def export_spec(year: int, carta: str, cfg: dict | None = None, region: ee.Geome
     masked = m.get("store_masked", True) if masked is None else masked
     region = region or grids.region(carta, cfg)
     name = f"mosaic_{year}_{carta}{suffix}"
-    collection = m.get("asset") or config.asset_path("mosaicos", cfg=cfg)
+    collection = collection or m.get("asset") or config.asset_path("mosaicos", cfg=cfg)
     asset_id = f"{collection}/{name}"
     img = on_the_fly(year, region, encoding, m.get("single_pass", True))
     if masked:
@@ -213,4 +218,5 @@ def ring_export_spec(year: int, carta: str, cfg: dict | None = None, margin_px: 
     collection = cfg["mosaic"].get("asset") or config.asset_path("mosaicos", cfg=cfg)
     old = ee.Image(f"{collection}/mosaic_{year}_{carta}").select(0).mask().unmask(0)
     return export_spec(year, carta, cfg, suffix="_anel", extra_mask=old.Not(),
-                       extra_props={"complement_of": f"mosaic_{year}_{carta}"})
+                       extra_props={"complement_of": f"mosaic_{year}_{carta}"},
+                       collection=cfg["mosaic"].get("ring_collection"))   # padrão: a mesma coleção
