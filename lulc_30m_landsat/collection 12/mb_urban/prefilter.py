@@ -21,7 +21,11 @@ CLASS_BANDS = ["class1_prob", "class2_prob", "class3_prob", "class4_prob"]
 
 # --- fontes de probabilidade --------------------------------------------------------------------
 def _classification_collection(cfg: dict) -> ee.ImageCollection:
-    return ee.ImageCollection(config.asset_path(cfg["classification"]["folder"], cfg=cfg))
+    """Probabilidades da versão configurada (`classification.version`): versões diferentes gravadas na
+    mesma coleção nunca se misturam."""
+    c = cfg["classification"]
+    return (ee.ImageCollection(config.asset_path(c["folder"], cfg=cfg))
+            .filter(ee.Filter.eq("version", c.get("version", 1))))
 
 
 def urban_probability(year: int, cfg: dict) -> ee.Image:

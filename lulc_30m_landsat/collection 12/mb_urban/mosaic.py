@@ -102,14 +102,17 @@ def on_the_fly(year: int, roi: ee.Geometry, encoding: str = "col12", single_pass
             .select(BANDS))
 
 
-def from_asset(year: int, roi: ee.Geometry, asset: str, encoding: str | None = None) -> ee.Image:
+def from_asset(year: int, roi: ee.Geometry, asset: str, encoding: str | None = None,
+               version: int | None = None) -> ee.Image:
     """Mosaico pré-processado: imagens da coleção com `year` igual, recortadas pela região.
 
-    Com `encoding`, usa só as imagens com `mosaic_encoding` igual (evita misturar mosaicos de
-    teste gravados com outra codificação na mesma coleção)."""
+    Com `encoding` e `version`, usa só as imagens com `mosaic_encoding` e `mosaic_version` iguais:
+    mosaicos de teste ou de versões anteriores na mesma coleção nunca se misturam."""
     col = ee.ImageCollection(asset).filter(ee.Filter.eq("year", year)).filterBounds(roi)
     if encoding:
         col = col.filter(ee.Filter.eq("mosaic_encoding", encoding))
+    if version is not None:
+        col = col.filter(ee.Filter.eq("mosaic_version", version))
     # mosaic() devolve a projeção padrão; a grade de 30 m EPSG:4326 é imposta na amostragem e na
     # exportação (scale=30), igual ao mosaico calculado na hora.
     return col.mosaic().select(BANDS)
@@ -122,9 +125,11 @@ def get(year: int, roi: ee.Geometry, cfg: dict | None = None) -> ee.Image:
     if m["source"] == "on_the_fly":
         img = on_the_fly(year, roi, m.get("encoding", "col12"), m.get("single_pass", True))
     elif m["source"] == "asset":
-        # na nossa coleção, filtra pela codificação; num mosaico externo (ex.: o oficial) não há essa propriedade
+        # na nossa coleção, filtra pela codificação e pela versão; num mosaico externo (ex.: o oficial)
+        # essas propriedades não existem
+        own = not m.get("asset")
         img = from_asset(year, roi, m.get("asset") or config.asset_path("mosaicos", cfg=cfg),
-                         None if m.get("asset") else m.get("encoding", "col12"))
+                         m.get("encoding", "col12") if own else None, m.get("version", 1) if own else None)
     else:
         raise ValueError(f"mosaic.source desconhecido: {m['source']}")
     return img.set("year", year, "mosaic_source", m["source"], "mosaic_encoding", m.get("encoding", "col12"))
@@ -159,7 +164,8 @@ def export_spec(year: int, carta: str, cfg: dict | None = None, region: ee.Geome
         img = img.updateMask(mask_with_margin(cfg))
     img = img.set({
         "year": year, "grid": carta, "collection_id": cfg["collection"], "theme": "Urban Area",
-        "product_type": "mosaic", "mosaic_encoding": encoding, "bands": len(BANDS),
+        "product_type": "mosaic", "mosaic_encoding": encoding, "mosaic_version": m.get("version", 1),
+        "bands": len(BANDS),
         "masked": int(bool(masked)), "mask_margin_m": m.get("mask_margin_m", 180) if masked else 0,
         "code_version": config.code_version(),
         "system:time_start": ee.Date.fromYMD(year, 1, 1).millis(),

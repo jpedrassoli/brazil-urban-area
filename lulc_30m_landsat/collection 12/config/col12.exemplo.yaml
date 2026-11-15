@@ -52,6 +52,8 @@ mosaic:
   stored_cartas: []
   features_table: amostras_mosaico   # tabelas com os valores do mosaico nos pontos de amostra (por carta)
   encoding: col12            # col12 = sem saturação das frações/NDFI; col11 = idêntico à Col 11 (só para conferência)
+  version: 1                 # versão do mosaico gravado (propriedade mosaic_version); mude ao alterar o
+                             # método do mosaico: a leitura só usa mosaicos desta versão e codificação
 
 # Amostras estáveis (porte de samplesCreation_v4.js + mb_batch/collections.js + visSamplesByGrid_v2.js)
 samples:
@@ -76,7 +78,7 @@ samples:
 
 # Classificação (porte de classification_batch_v3.js + class_lib.js)
 classification:
-  version: 1                          # versão do produto de probabilidade
+  version: 1                          # versão do produto de probabilidade; o pré-filtro só lê esta versão
   urban_samples: 200
   balance: 4                          # não urbano = urban_samples * balance
   sample_order: column                # column = sorteio pela coluna `random` gravada (reprodutível em qualquer cópia);
