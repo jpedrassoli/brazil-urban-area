@@ -35,6 +35,11 @@ def _validation_points(carta: str, cfg: dict) -> ee.FeatureCollection:
     from . import tasks
     region = grids.region(carta, cfg)
     val = samples.table(cfg).filter(ee.Filter.eq("type", "validation")).filterBounds(region)
+    if cfg.get("thresholds", {}).get("calibration_split"):     # (1) em teste: a outra metade calibrou o limiar
+        val = val.filter(ee.Filter.gt("random", 0.9))
+    indep = cfg.get("evaluation", {}).get("independent_points")
+    if indep:                                                  # (7) em teste: pontos independentes (ex.: visuais)
+        val = val.merge(ee.FeatureCollection(indep).filterBounds(region))
     extra_id = samples.validation_extra_table_id(carta, cfg)
     if tasks.asset_exists(extra_id):
         val = val.merge(ee.FeatureCollection(extra_id))

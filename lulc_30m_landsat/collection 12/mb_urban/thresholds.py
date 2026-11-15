@@ -36,6 +36,17 @@ DEFAULTS = {
     "percentile_factor": 0.95,
     "fill_divisor": 1.25,          # threshold ausente = cutPercentile / 1,25
     "aggregate": "median",         # median (Col 11) ou mean (Col 10)
+    # --- opções EM TESTE para a Col 12 (desligadas = método da Col 11) ---
+    "calibration_split": False,    # (1) calibra só na metade dos pontos de validação (random <= 0,9); a avaliação usa a outra
+    "calibration_points": False,   # (2,3,4) usa a tabela de calibração própria (calibration_export_spec)
+    "calibration_n": 110,          # pontos por estrato urbano na tabela de calibração (centro e borda)
+    "edge_px": 5,                  # (3) urbano a até 5 px do não urbano = borda
+    "near_m": 1000,                # (3) não urbano a até 1 km do urbano = perto da cidade
+    "confusable_classes": [23, 25, 29, 30],  # (4) praia, outras não vegetadas, afloramento, mineração
+    "pool_years": 0,               # (6) se um ano tem menos de min_urban urbanos, junta os anos a ±pool_years
+    "min_urban": 30,
+    "bootstrap": 0,                # (6) reamostragens para o intervalo da mediana por carta (0 = desligado)
+    "fill": "national",            # (6) cartas sem dados: national ou sheet_1mi (mediana da folha 1:1.000.000)
 }
 
 
@@ -48,16 +59,25 @@ def _probability(year: int, cfg: dict) -> ee.Image:
     t = _cfg(cfg)
     if t["probability"] == "temporal_mean":
         return prefilter.temporal_mean(year, cfg).rename("classification")
+    if t["probability"] == "prefilter_mean":
+        # (5) EM TESTE: o valor que o pré-filtro compara com o limiar (média de vizinhança da média temporal).
+        # Depende da imagem de limiares atual (máscara de 0,7 × limiar): é uma iteração a partir dela.
+        return prefilter.neighborhood(prefilter.temporal_mean(year, cfg), cfg).unmask(0).rename("classification")
     return prefilter.urban_probability(year, cfg).unmask(0).rename("classification")
 
 
-def _validation_points(year: int, context: ee.Geometry, cfg: dict) -> ee.FeatureCollection:
+def _validation_points(year: int, context: ee.Geometry, cfg: dict, carta: str | None = None) -> ee.FeatureCollection:
     from .classify import window_for_year
     t = _cfg(cfg)
+    if t["calibration_points"]:
+        return (ee.FeatureCollection(calibration_table_id(carta, cfg))
+                .filter(ee.Filter.eq("range", window_for_year(year, cfg))))
     if t["validation"] != "table":
         raise ValueError("thresholds.validation: só 'table' está implementado")
     val = (samples.table(cfg).filter(ee.Filter.eq("range", window_for_year(year, cfg)))
            .filter(ee.Filter.eq("type", "validation")).filterBounds(context))
+    if t["calibration_split"]:
+        val = val.filter(ee.Filter.lte("random", 0.9))
     n = t["urban_points"]
     urb = val.filter(ee.Filter.eq("class", 1)).sort("random").limit(n)
     other = val.filter(ee.Filter.neq("class", 1)).sort("random").limit(n * t["balance"])
@@ -68,7 +88,7 @@ def values_fc(carta: str, cfg: dict, years: list[int] | None = None) -> ee.Featu
     """Probabilidade urbana (`classification`) e rótulo (`value`, 1 urbano) nos pontos, por ano."""
     years = years or config.years(cfg)
     context = grids.context_fc(carta, cfg).geometry().bounds(10)
-    parts = [_probability(y, cfg).sampleRegions(collection=_validation_points(y, context, cfg),
+    parts = [_probability(y, cfg).sampleRegions(collection=_validation_points(y, context, cfg, carta),
                                                  properties=["value"], scale=30, tileScale=16,
                                                  geometries=True)   # a exportação para asset exige geometria
              .map(lambda f, y=y: f.set("year", y)) for y in years]
@@ -114,6 +134,11 @@ def by_year(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     t = _cfg(cfg)
     rows = []
     for (carta, year), d in df.groupby(["carta", "year"]):
+        pooled = 0
+        if t["pool_years"] and d["value"].sum() < t["min_urban"]:     # (6) poucos urbanos: junta anos vizinhos
+            dc = df[df["carta"] == carta]
+            d = dc[(dc["year"] - year).abs() <= t["pool_years"]]
+            pooled = t["pool_years"]
         y, s = d["value"].to_numpy().astype(int), d["classification"].to_numpy().astype(float)
         urb = s[y == 1]
         cut = np.quantile(urb, t["percentile"]) * t["percentile_factor"] if len(urb) else np.nan
@@ -126,7 +151,7 @@ def by_year(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
             sens = (pred & (y == 1)).sum() / (y == 1).sum()
             spec = (~pred & (y == 0)).sum() / (y == 0).sum()
             oa = (pred == (y == 1)).mean()
-        rows.append({"carta": carta, "year": year, "n": len(y), "n_urban": int(y.sum()), "auc": auc,
+        rows.append({"carta": carta, "year": year, "pooled_years": pooled, "n": len(y), "n_urban": int(y.sum()), "auc": auc,
                      "threshold": thr, "sensitivity": sens, "specificity": spec, "oa": oa, "cutPercentile": cut})
     out = pd.DataFrame(rows).replace([np.inf, -np.inf], np.nan)
     out["threshold"] = out["threshold"].fillna((out["cutPercentile"] / t["fill_divisor"]).round(0))
@@ -148,11 +173,54 @@ def by_carta(yearly: pd.DataFrame, cartas: list[str], cfg: dict) -> pd.DataFrame
             r[col] = (v.median() if agg == "median" else v.mean()) if len(v) else np.nan
             r[f"{col}_p10"] = v.quantile(0.1) if len(v) else np.nan
             r[f"{col}_p90"] = v.quantile(0.9) if len(v) else np.nan
+            if t["bootstrap"] and len(v) > 2:                 # (6) intervalo de 90% da mediana por reamostragem
+                rng = np.random.default_rng(0)
+                meds = [np.median(rng.choice(v.to_numpy(), len(v))) for _ in range(t["bootstrap"])]
+                r[f"{col}_ci05"], r[f"{col}_ci95"] = np.quantile(meds, [0.05, 0.95])
         rows.append(r)
     out = pd.DataFrame(rows)
-    for col in ("threshold", "cutPercentile"):            # sem dados: mediana nacional
-        out[col] = out[col].fillna(out[col].median())
+    for col in ("threshold", "cutPercentile"):
+        if t["fill"] == "sheet_1mi":                          # (6) mediana da folha 1:1.000.000 (ex.: SA-22)
+            out[col] = out[col].fillna(out.groupby(out["carta"].str[:5])[col].transform("median"))
+        out[col] = out[col].fillna(out[col].median())          # sem dados: mediana nacional
     return out.round(1)
+
+
+# --- (2,3,4) tabela de calibração própria — EM TESTE ---------------------------------------------
+def calibration_table_id(carta: str, cfg: dict) -> str:
+    t = _cfg(cfg)
+    return config.asset_path(t["folder"], f"calibracao_v{t['version']}", f"calibracao_{carta}", cfg=cfg)
+
+
+def calibration_points(carta: str, window: str, cfg: dict) -> ee.FeatureCollection:
+    """Pontos estáveis na janela, estratificados: 1 urbano centro, 2 urbano borda, 3 não urbano perto da cidade,
+    4 não urbano confundível (praia, mineração, afloramento, outras não vegetadas), 5 não urbano longe.
+    `value` = 1 nos estratos urbanos. Nunca usados no treino."""
+    t = _cfg(cfg)
+    raw = samples.stable_by_years(samples.windows(cfg)[window], cfg)       # classe MapBiomas estável (sem reagrupar)
+    urb = raw.eq(24).unmask(0)
+    core = urb.focalMin(t["edge_px"], "circle", "pixels")
+    near = urb.focalMax(t["near_m"], "circle", "meters").And(urb.Not())
+    conf = ee.Image(0)
+    for c in t["confusable_classes"]:
+        conf = conf.Or(raw.eq(c).unmask(0))
+    stratum = (ee.Image(5).where(near, 3).where(conf, 4).where(urb.And(core.Not()), 2).where(core, 1)
+               .updateMask(raw.mask()).rename("stratum").toByte())
+    n = t["calibration_n"]
+    region = grids.context_fc(carta, cfg).geometry().bounds(10)
+    pts = stratum.stratifiedSample(numPoints=n, classBand="stratum", region=region, scale=30, geometries=True,
+                                   seed=cfg["samples"]["seed"] + 7, classValues=[1, 2, 3, 4, 5],
+                                   classPoints=[n, n, 2 * n, n, 2 * n], dropNulls=True, tileScale=16)
+    return pts.map(lambda f: f.set("value", ee.Number(f.get("stratum")).lte(2), "range", window, "grid_name", carta))
+
+
+def calibration_export_spec(carta: str, cfg: dict | None = None):
+    cfg = cfg or config.load()
+    fc = ee.FeatureCollection([calibration_points(carta, w, cfg) for w in samples.windows(cfg)]).flatten()
+    name = f"limiar_calibracao_{carta}"
+    asset_id = calibration_table_id(carta, cfg)
+    return (name, asset_id, lambda: ee.batch.Export.table.toAsset(
+        collection=fc, description=config.task_description(name, cfg), assetId=asset_id))
 
 
 # --- 3. imagem -----------------------------------------------------------------------------------

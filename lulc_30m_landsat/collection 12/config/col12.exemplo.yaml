@@ -152,6 +152,16 @@ thresholds:
   percentile_factor: 0.95
   fill_divisor: 1.25           # limiar ausente = cutPercentile / 1,25
   aggregate: median            # median (Col 11) ou mean (Col 10)
+  # --- EM TESTE (desligado = método da Col 11; decidir depois) ---
+  calibration_split: false     # (1) calibra numa metade da validação, avalia na outra
+  calibration_points: false    # (2,3,4) tabela de calibração própria: urbano centro/borda, não urbano perto/longe, confundíveis
+  calibration_n: 110
+  confusable_classes: [23, 25, 29, 30]   # praia, outras não vegetadas, afloramento, mineração
+  # probability: prefilter_mean   (5) calibrar no valor que o pré-filtro compara
+  pool_years: 0                # (6) junta anos vizinhos quando há menos de min_urban urbanos
+  min_urban: 30
+  bootstrap: 0                 # (6) intervalo da mediana por carta
+  fill: national               # (6) national ou sheet_1mi
 
 # Escopo das rodadas: "desenvolvimento" (cartas_teste) ou "brasil" (todas as cartas da grade hexagonal)
 scope: desenvolvimento
@@ -167,6 +177,7 @@ evaluation:
     years: [1985, 2024]
     urban_class: 24
   area_scale_m: 30
+  independent_points: null         # (7) EM TESTE: pontos independentes (ex.: interpretação visual), só avaliação
   periods: [[1985, 1992], [1993, 2000], [2001, 2008], [2009, 2025]]   # agregação da acurácia
   extra_validation:                  # pontos extras só para avaliar o início da série
     window_start: 1985
