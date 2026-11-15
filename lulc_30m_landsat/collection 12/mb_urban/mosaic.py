@@ -58,20 +58,40 @@ def _encode_median(median: ee.Image, encoding: str) -> ee.Image:
     return encoded.select(MEDIAN_BANDS)
 
 
-def on_the_fly(year: int, roi: ee.Geometry, encoding: str = "col12") -> ee.Image:
-    """Mosaico calculado a partir das coleções Landsat (mosaicGenByBandsLists da Col 11)."""
+def on_the_fly(year: int, roi: ee.Geometry, encoding: str = "col12", single_pass: bool = True) -> ee.Image:
+    """Mosaico calculado a partir das coleções Landsat (mosaicGenByBandsLists da Col 11).
+
+    `single_pass=True` calcula mediana e percentis com redutores combinados, numa passada por
+    coleção (SR e bruta). `False` repete a forma da Col 11: uma redução por estatística.
+    """
     sr = landsat.surface_reflectance(year, roi).map(indices.sr_feature_space)
     raw = landsat.raw(year, roi).map(indices.raw_feature_space)
 
-    sr_median = _encode_median(sr.select(MEDIAN_BANDS).median(), encoding)
+    if single_pass:
+        red_sr = ee.Reducer.median().combine(ee.Reducer.percentile([10, 90]), "", True)
+        sr_red = sr.select(MEDIAN_BANDS).reduce(red_sr)
+        median = sr_red.select([f"{b}_median" for b in MEDIAN_BANDS], MEDIAN_BANDS)
+        p1090 = sr_red.select(["EVI_p10", "EVI_p90", "EVI2_p10", "EVI2_p90"])
+        red_raw = ee.Reducer.median().combine(ee.Reducer.percentile([25, 75, 90]), "", True)
+        raw_red = raw.select(RAW_BANDS).reduce(red_raw)
+        raw_med = raw_red.select(["EBBI_median"], ["EBBI"])
+        raw_p2575 = raw_red.select(["EBBI_p25", "EBBI_p75"])
+        raw_p90 = raw_red.select(["EBBI_p90"])
+    else:
+        median = sr.select(MEDIAN_BANDS).median()
+        p1090 = sr.select(P1090_BANDS).reduce(ee.Reducer.percentile([10, 90]))
+        raw_med = raw.select(RAW_BANDS).median()
+        raw_p90 = raw.select(RAW_BANDS).reduce(ee.Reducer.percentile([90]))
+        raw_p2575 = raw.select(RAW_BANDS).reduce(ee.Reducer.percentile([25, 75]))
 
-    sr_1090 = _scale(sr.select(P1090_BANDS).reduce(ee.Reducer.percentile([10, 90])))
+    sr_median = _encode_median(median, encoding)
+    sr_1090 = _scale(p1090)
     sr_dif = (sr_1090.select([1, 3]).subtract(sr_1090.select([0, 2]))
               .rename(["EVI_dif9010", "EVI2_dif9010"]))
 
-    raw_median = _scale(raw.select(RAW_BANDS).median())
-    raw_90 = _scale(raw.select(RAW_BANDS).reduce(ee.Reducer.percentile([90])))
-    raw_2575 = _scale(raw.select(RAW_BANDS).reduce(ee.Reducer.percentile([25, 75])))
+    raw_median = _scale(raw_med)
+    raw_90 = _scale(raw_p90)
+    raw_2575 = _scale(raw_p2575)
     raw_dif = raw_2575.select([1]).subtract(raw_2575.select([0])).rename(["EBBI_dif7525"])
 
     return (sr_median
@@ -85,6 +105,8 @@ def on_the_fly(year: int, roi: ee.Geometry, encoding: str = "col12") -> ee.Image
 def from_asset(year: int, roi: ee.Geometry, asset: str) -> ee.Image:
     """Mosaico pré-processado: imagens da coleção com `year` igual, recortadas pela região."""
     col = ee.ImageCollection(asset).filter(ee.Filter.eq("year", year)).filterBounds(roi)
+    # mosaic() devolve a projeção padrão; a grade de 30 m EPSG:4326 é imposta na amostragem e na
+    # exportação (scale=30), igual ao mosaico calculado na hora.
     return col.mosaic().select(BANDS)
 
 
@@ -93,28 +115,36 @@ def get(year: int, roi: ee.Geometry, cfg: dict | None = None) -> ee.Image:
     cfg = cfg or config.load()
     m = cfg["mosaic"]
     if m["source"] == "on_the_fly":
-        img = on_the_fly(year, roi, m.get("encoding", "col12"))
+        img = on_the_fly(year, roi, m.get("encoding", "col12"), m.get("single_pass", True))
     elif m["source"] == "asset":
-        if not m.get("asset"):
-            raise ValueError("mosaic.source = asset, mas mosaic.asset está vazio na configuração")
-        img = from_asset(year, roi, m["asset"])
+        img = from_asset(year, roi, m.get("asset") or config.asset_path("mosaicos", cfg=cfg))
     else:
         raise ValueError(f"mosaic.source desconhecido: {m['source']}")
     return img.set("year", year, "mosaic_source", m["source"], "mosaic_encoding", m.get("encoding", "col12"))
 
 
-def export_to_asset(year: int, region: ee.Geometry, name: str, folder: str = "mosaics",
-                    cfg: dict | None = None) -> ee.batch.Task:
-    """Cria (sem iniciar) a tarefa que grava um mosaico on-the-fly como asset.
+def export_spec(year: int, carta: str, cfg: dict | None = None, region: ee.Geometry | None = None,
+                suffix: str = ""):
+    """Tarefa (nome, asset_id, criar_tarefa) que grava o mosaico de uma carta e ano na coleção de mosaicos.
 
-    Gera a coleção que depois pode ser usada com `mosaic.source: asset`.
+    A grade é EPSG:4326 a 30 m, a mesma usada pela classificação: os pixels do asset coincidem com os
+    calculados na hora. Como o valor de cada pixel não depende da região usada para buscar as cenas,
+    os mosaicos de cartas vizinhas se encaixam e formam a super carta.
     """
+    from . import grids
     cfg = cfg or config.load()
-    encoding = cfg["mosaic"].get("encoding", "col12")
-    img = on_the_fly(year, region, encoding).set(
-        "year", year, "collection", cfg["collection"], "mosaic_encoding", encoding)
-    asset_id = config.asset_path(folder, name, cfg=cfg)
-    return ee.batch.Export.image.toAsset(
+    m = cfg["mosaic"]
+    encoding = m.get("encoding", "col12")
+    region = region or grids.carta_geometry(carta, cfg)
+    name = f"mosaic_{year}_{carta}{suffix}"
+    collection = m.get("asset") or config.asset_path("mosaicos", cfg=cfg)
+    asset_id = f"{collection}/{name}"
+    img = on_the_fly(year, region, encoding, m.get("single_pass", True)).set({
+        "year": year, "grid": carta, "collection_id": cfg["collection"], "theme": "Urban Area",
+        "product_type": "mosaic", "mosaic_encoding": encoding, "bands": len(BANDS),
+        "code_version": config.code_version(),
+        "system:time_start": ee.Date.fromYMD(year, 1, 1).millis(),
+    })
+    return (name, asset_id, lambda: ee.batch.Export.image.toAsset(
         image=img, description=config.task_description(name, cfg), assetId=asset_id, region=region,
-        scale=30, maxPixels=1e13,
-    )
+        crs="EPSG:4326", scale=30, maxPixels=1e13))

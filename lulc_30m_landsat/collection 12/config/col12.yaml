@@ -40,7 +40,8 @@ grids:
 # Fonte do mosaico anual: "on_the_fly" (calculado a partir do Landsat) ou "asset" (pré-processado)
 mosaic:
   source: on_the_fly
-  asset: null                # ImageCollection com mosaicos pré-processados (quando source = asset)
+  asset: null                # ImageCollection com mosaicos pré-processados; vazio = <destino>/mosaicos
+  single_pass: true          # mediana e percentis numa passada por coleção (mesmo resultado, menos trabalho)
   encoding: col12            # col12 = sem saturação das frações/NDFI; col11 = idêntico à Col 11 (só para conferência)
 
 # Amostras estáveis (porte de samplesCreation_v4.js + mb_batch/collections.js + visSamplesByGrid_v2.js)

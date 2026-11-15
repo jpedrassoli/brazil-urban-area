@@ -45,20 +45,22 @@ def _date_filter(year: int) -> ee.Filter:
 
 def surface_reflectance(year: int, roi: ee.Geometry) -> ee.ImageCollection:
     """Landsat 4, 5, 7, 8 e 9 SR do ano, sem nuvem, escalado, bandas padronizadas."""
-    cols = [ee.ImageCollection(sr).filterBounds(roi).map(mask_clouds_qa)
+    # O filtro de data vem antes da máscara/escala (na Col 11 vinha depois): mesmas imagens, menos trabalho.
+    cols = [ee.ImageCollection(sr).filter(_date_filter(year)).filterBounds(roi).map(mask_clouds_qa)
             .map(apply_scale_factors).select(bands, SR_NAMES)
             for sr, bands, _, _ in SENSORS.values()]
     merged = cols[0]
     for c in cols[1:]:
         merged = merged.merge(c)
-    return merged.filter(_date_filter(year))
+    return merged
 
 
 def raw(year: int, roi: ee.Geometry) -> ee.ImageCollection:
     """Landsat 4, 5, 7, 8 e 9 brutos (números digitais) do ano, sem nuvem: NIR, MIR, TIR."""
-    cols = [ee.ImageCollection(col).filterBounds(roi).map(mask_clouds_qa).select(bands, RAW_NAMES)
+    cols = [ee.ImageCollection(col).filter(_date_filter(year)).filterBounds(roi).map(mask_clouds_qa)
+            .select(bands, RAW_NAMES)
             for _, _, col, bands in SENSORS.values()]
     merged = cols[0]
     for c in cols[1:]:
         merged = merged.merge(c)
-    return merged.filter(_date_filter(year))
+    return merged

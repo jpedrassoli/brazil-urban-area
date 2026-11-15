@@ -70,6 +70,13 @@ def ensure_folder(asset_id: str) -> None:
         ee.data.createAsset({"type": "FOLDER"}, parent)
 
 
+def ensure_collection(path: str) -> None:
+    """Cria (se faltar) uma ImageCollection vazia e as pastas acima dela."""
+    if not asset_exists(path):
+        ensure_folder(path)
+        ee.data.createAsset({"type": "IMAGE_COLLECTION"}, path)
+
+
 def _log(event: dict, log_name: str) -> None:
     LOG_DIR.mkdir(exist_ok=True)
     event = {"quando": dt.datetime.now().isoformat(timespec="seconds"), **event}
@@ -150,7 +157,11 @@ def run_queue(specs, account: str = "default", max_concurrent: int | None = None
             if asset_exists(asset_id):
                 rows.append({"tarefa": name, "estado": "JÁ EXISTE", "erro": None})
                 continue
-            ensure_folder(asset_id)
+            parent = asset_id.rsplit("/", 1)[0]
+            if parent.rsplit("/", 1)[-1] == "mosaicos":
+                ensure_collection(parent)
+            else:
+                ensure_folder(asset_id)
             task = make()
             task.start()
             attempts[name] = attempts.get(name, 0) + 1

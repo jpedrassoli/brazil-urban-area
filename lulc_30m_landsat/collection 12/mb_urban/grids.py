@@ -42,6 +42,13 @@ def context(carta: str, cfg: dict | None = None) -> ee.Geometry:
     return context_fc(carta, cfg).geometry().bounds(10)
 
 
+def carta_geometry(carta: str, cfg: dict | None = None) -> ee.Geometry:
+    """Retângulo da carta 1:250.000 (grade `cartas`). Unidade de gravação dos mosaicos."""
+    cfg = cfg or config.load()
+    field = cfg["grids"]["grid_field"]
+    return cartas_fc(cfg).filter(ee.Filter.eq(field, carta)).geometry()
+
+
 def region(carta: str, cfg: dict | None = None) -> ee.Geometry:
     """Área a classificar/exportar: o hexágono da carta."""
     cfg = cfg or config.load()
