@@ -19,6 +19,8 @@ import pandas as pd
 from . import auth, config
 
 LOG_DIR = config.PACKAGE_ROOT / "logs"
+# subpastas gravadas como ImageCollection (lidas depois como coleção pelas etapas seguintes)
+COLLECTION_FOLDERS = {"mosaicos", "probabilidades"}
 
 _STATES = ["RUNNING", "READY", "COMPLETED", "FAILED", "CANCELLED"]
 
@@ -158,7 +160,7 @@ def run_queue(specs, account: str = "default", max_concurrent: int | None = None
                 rows.append({"tarefa": name, "estado": "JÁ EXISTE", "erro": None})
                 continue
             parent = asset_id.rsplit("/", 1)[0]
-            if parent.rsplit("/", 1)[-1] == "mosaicos":
+            if parent.rsplit("/", 1)[-1] in COLLECTION_FOLDERS:
                 ensure_collection(parent)
             else:
                 ensure_folder(asset_id)
