@@ -18,12 +18,13 @@ mb_urban/
   grids.py          cartas 1:250.000, super cartas (vizinhança) e divisão em lotes
   landsat.py        coleções Landsat 4–9 (C2): bandas, máscara de nuvem, escala
   indices.py        índices espectrais e mistura espectral (porte de index_lib.js)
-  mosaic.py         mosaico anual de 42 bandas; fonte "on_the_fly" ou "asset"
+  mosaic.py         mosaico anual de 42 bandas; fonte "on_the_fly", "asset" ou "auto"
   samples.py        amostras estáveis entre coleções do MapBiomas, treino/validação
-  classify.py       Random Forest por carta e ano: probabilidade de 4 classes
+  classify.py       classificação por carta e ano (Random Forest; gradient boosting em teste)
   tasks.py          fila de exportação e acompanhamento de tarefas
   prefilter.py      pré-filtro: probabilidade anual → mapa binário por ano
   postprocess.py    filtros temporais (ponto de quebra) e espaciais; mapa final por carta
+  thresholds.py     limiar ótimo de probabilidade por carta (imagem usada pelo pré-filtro)
   evaluate.py       acurácia, área urbana e comparação com a Col 11, por carta
   col11.py          acesso aos resultados da Col 11, para comparação
 notebooks/          um notebook por etapa, rodável localmente (VS Code) ou no Colab
@@ -31,8 +32,27 @@ notebooks/          um notebook por etapa, rodável localmente (VS Code) ou no C
   02_amostras.ipynb
   03_classificacao.ipynb
   04_avaliacao.ipynb
-verificacao/        scripts JS para conferir o porte contra a versão de produção da Col 11 no Code Editor
+verificacao/        conferência do porte contra a produção da Col 11 (scripts JS e RESULTADOS.md)
+dados/              cópias dos insumos vetoriais e tabelas usados pelo código (com origem e sha256)
 ```
+
+## O que muda em relação à Coleção 11
+
+Toda opção da Col 11 continua disponível na configuração (os comentários de `config/col12.exemplo.yaml`
+dizem como reproduzi-la). Em teste para a Col 12:
+
+- **Mosaico:** codificação sem saturação das frações e do NDFI; mosaico gravado como asset nas cartas
+  escolhidas, só dentro da máscara espacial + margem em pixels igual ao alcance do filtro de vizinhança
+  (`mosaic.source: auto` usa o gravado onde houver e calcula na hora nas demais).
+- **Amostras:** a Coleção 11 entra na estabilidade entre coleções; em cada ano entram as coleções que o
+  cobrem (`samples.stability_mode: available`); janela nova 2017–2025 para treino e validação de 2021 em diante.
+- **Reprodutibilidade:** sorteio das amostras pela coluna `random` gravada e amostras ordenadas antes do
+  treino (mesmo resultado com mosaico gravado ou calculado na hora); propriedade de versão nos mosaicos e
+  probabilidades, filtrada na leitura; metadados com parâmetros e commit do código em cada asset.
+- **Saída da classificação por ano** (uma imagem com todos os anos estoura a memória do Earth Engine).
+- **Limiar por carta** recalculável (`mb_urban.thresholds`), em vez de depender da imagem pronta da Col 11.
+- **Avaliação integrada:** acurácia por período com intervalo de confiança, pontos extras de validação
+  no início da série, área urbana e concordância com uma referência.
 
 As saídas dos notebooks são removidas automaticamente nos commits (`nbstripout`),
 para não publicar caminhos, mensagens de erro ou dados de conta.
@@ -76,8 +96,9 @@ versionado) e preencha pelo menos:
 
 - `cloud_project`: o seu projeto do Google Cloud registrado no Earth Engine;
 - `destinations`: a pasta de assets onde os resultados serão gravados (precisa existir);
-- `samples.table`: o asset da tabela de amostras, depois de subir o CSV de
-  [`collection 11/dados`](../collection%2011/dados).
+- `samples.table`: o asset da tabela de amostras. Para reproduzir a Col 11, suba o CSV de
+  [`collection 11/dados`](../collection%2011/dados); para o método da Col 12, gere a tabela com
+  `samples.carta_export_spec` (por carta, incluindo as vizinhas) e `samples.merge_export_spec`.
 
 Para usar um arquivo em outro lugar, aponte a variável `MB_URBAN_CONFIG`:
 
@@ -90,10 +111,10 @@ $env:MB_URBAN_CONFIG = "C:\caminho\para\minha_config.yaml"
 
 Nos notebooks, sem um `config/col12.yaml` próprio, basta preencher `PROJETO` no bloco de preparação.
 
-**Insumos de terceiros.** Algumas etapas leem assets que não são da sua conta: a grade hexagonal de
-cartas, a imagem de limiares por carta, a máscara espacial e o índice de infraestrutura (veja os
-comentários no início do arquivo de exemplo). Se você não tiver leitura neles, peça acesso aos
-responsáveis ou substitua-os pelos seus.
+**Insumos de terceiros.** A grade hexagonal de cartas, a imagem de limiares por carta, a máscara espacial
+e o índice de infraestrutura (IRS) são lidos de cópias com leitura pública, indicadas na configuração de
+exemplo (o asset original está anotado ao lado de cada chave). Os vetoriais e a tabela de limiares também
+estão em [`dados/`](dados), para subir de novo se algum asset deixar de existir.
 
 **Avaliação.** Por padrão, o notebook de avaliação compara com a classe de área urbanizada da coleção
 pública do MapBiomas, que qualquer pessoa acessa.
