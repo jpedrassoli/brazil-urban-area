@@ -69,6 +69,11 @@ def classify_year(carta: str, year: int, cfg: dict | None = None) -> ee.Image:
     img = mosaic.get(year, context, cfg)
     train = img.sampleRegions(collection=training_samples(year, context, cfg),
                               scale=30, geometries=True, tileScale=16)
+    # O Random Forest depende da ORDEM das amostras, e sampleRegions devolve uma ordem que muda com
+    # o caminho de cálculo (mosaico na hora ou gravado). "sorted" ordena pela coluna `random` e torna o
+    # resultado igual nos dois caminhos; "as_returned" mantém a ordem da Col 11 (reprodução).
+    if c.get("training_order", "sorted") == "sorted":
+        train = train.sort("random")
     rf = (ee.Classifier.smileRandomForest(numberOfTrees=c["trees"], minLeafPopulation=c["min_leaf_population"])
           .train(features=train, classProperty="class", inputProperties=mosaic.BANDS)
           .setOutputMode("MULTIPROBABILITY"))
@@ -105,7 +110,7 @@ def _metadata(cfg: dict, carta: str, years: list[int], output: str) -> dict:
         "output_format": output, "year_first": min(years), "year_last": max(years),
         "rf_trees": c["trees"], "rf_min_leaf_population": c["min_leaf_population"],
         "samples_urban": c["urban_samples"], "samples_balance": c["balance"],
-        "samples_order": c.get("sample_order", "column"),
+        "samples_order": c.get("sample_order", "column"), "training_order": c.get("training_order", "sorted"),
         "samples_table": cfg["samples"]["table"],
         "mosaic_source": cfg["mosaic"]["source"], "mosaic_encoding": cfg["mosaic"].get("encoding", "col12"),
         # origem

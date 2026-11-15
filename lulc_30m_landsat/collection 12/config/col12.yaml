@@ -70,6 +70,8 @@ classification:
   balance: 4                          # não urbano = urban_samples * balance
   sample_order: column                # column = sorteio pela coluna `random` gravada (reprodutível em qualquer cópia);
                                       # ee_random_column = randomColumn() como na Col 11 (só reproduz com a tabela original)
+  training_order: sorted              # sorted = amostras ordenadas antes do treino (mesmo resultado com mosaico na hora ou gravado);
+                                      # as_returned = ordem da Col 11 (só para reproduzi-la)
   trees: 120
   min_leaf_population: 5
   output: multiband                   # multiband (1 imagem por carta, todos os anos) ou per_year (Col 11)
