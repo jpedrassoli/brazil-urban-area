@@ -53,7 +53,8 @@ computador.
 1. Abra o notebook da etapa (`notebooks/`) no Colab: no GitHub, abra o arquivo e troque
    `github.com` por `githubtocolab.com` na barra de endereço.
 2. Rode o primeiro bloco: ele baixa o código e instala o pacote.
-3. Rode o bloco de conta: abre o login do Google para você autorizar a sua conta do Earth Engine.
+3. Rode o bloco de conta: aparece um link do Google; abra, autorize com a sua conta do Earth Engine,
+   copie o código e cole no campo abaixo do bloco (não compartilhe esse código).
 4. Ajuste os parâmetros do notebook (carta, ano) e siga os blocos em ordem.
 
 ### Opção 2 — no seu computador
