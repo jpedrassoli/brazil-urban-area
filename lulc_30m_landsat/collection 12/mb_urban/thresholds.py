@@ -69,7 +69,8 @@ def values_fc(carta: str, cfg: dict, years: list[int] | None = None) -> ee.Featu
     years = years or config.years(cfg)
     context = grids.context_fc(carta, cfg).geometry().bounds(10)
     parts = [_probability(y, cfg).sampleRegions(collection=_validation_points(y, context, cfg),
-                                                 properties=["value"], scale=30, tileScale=16)
+                                                 properties=["value"], scale=30, tileScale=16,
+                                                 geometries=True)   # a exportação para asset exige geometria
              .map(lambda f, y=y: f.set("year", y)) for y in years]
     return ee.FeatureCollection(parts).flatten().select(["classification", "value", "year"])
 
