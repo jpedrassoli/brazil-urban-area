@@ -105,6 +105,7 @@ def export_tasks(cartas: list[str], cfg: dict | None = None, suffix: str = ""):
         "breakpoint_min_fraction": p["breakpoint_min_fraction"], "breakpoint_min_years": p["breakpoint_min_years"],
         "hole_px": p["hole_px"], "noise_px": p["noise_px"], "spatial_mask": p["spatial_mask"],
         "code_version": config.code_version(),
+        "config_sha256": config.config_hash(cfg), "inputs": config.inputs_manifest(cfg),
     }
     specs = []
     for carta in cartas:

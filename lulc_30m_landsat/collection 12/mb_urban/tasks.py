@@ -115,6 +115,10 @@ def _refresh(account: str) -> dict[str, dict]:
         if r is not None:
             r["estado"] = st.get("state", r["estado"])
             r["erro"] = st.get("error_message")
+            if st.get("batch_eecu_usage_seconds") is not None:      # custo de processamento
+                r["eecu_h"] = round(float(st["batch_eecu_usage_seconds"]) / 3600, 3)
+            if st.get("start_timestamp_ms") and st.get("update_timestamp_ms"):
+                r["minutos"] = round((int(st["update_timestamp_ms"]) - int(st["start_timestamp_ms"])) / 60000, 1)
     _save_registry(account, reg)
     return reg
 
@@ -165,6 +169,7 @@ def run_queue(specs, account: str = "default", max_concurrent: int | None = None
     Tarefas que já estavam na fila (de uma execução anterior) são acompanhadas do mesmo jeito.
     """
     cfg = cfg or config.load()
+    config.check_production_code(cfg)
     auth.init(account, cfg)
     limit = max_concurrent or cfg["accounts"][account]["max_concurrent"]
     pending = list(specs)
@@ -258,3 +263,27 @@ def run_queue(specs, account: str = "default", max_concurrent: int | None = None
     if pending and not wait:
         rows += [{"tarefa": s[0], "estado": "AGUARDANDO VAGA", "erro": None} for s in pending]
     return pd.DataFrame(rows)
+
+
+def cost_summary(account: str = "default") -> pd.DataFrame:
+    """Custo (EECU-h) e duração por tipo de tarefa desta conta; completa no registro o custo que faltar."""
+    import re
+    auth.init(account)
+    reg = _load_registry(account)
+    missing = [tid for tid, r in reg.items()
+               if r["estado"] in ("COMPLETED", "FAILED", "CANCELLED") and "eecu_h" not in r]
+    for i in range(0, len(missing), 50):
+        for st in ee.data.getTaskStatus(missing[i:i + 50]):
+            r = reg.get(st["id"])
+            if r is not None and st.get("batch_eecu_usage_seconds") is not None:
+                r["eecu_h"] = round(float(st["batch_eecu_usage_seconds"]) / 3600, 3)
+                if st.get("start_timestamp_ms") and st.get("update_timestamp_ms"):
+                    r["minutos"] = round((int(st["update_timestamp_ms"]) - int(st["start_timestamp_ms"])) / 60000, 1)
+    _save_registry(account, reg)
+    df = pd.DataFrame([{"id": k, **v} for k, v in reg.items()])
+    if df.empty or "eecu_h" not in df:
+        return df
+    df["tipo"] = df["tarefa"].map(lambda n: re.sub(r"_(\d{4}|[A-Z]{2}-\d\d-[A-Z]-[A-Z]).*$", "", n))
+    return (df.groupby(["tipo", "estado"]).agg(tarefas=("tarefa", "count"), eecu_h=("eecu_h", "sum"),
+                                              eecu_h_media=("eecu_h", "mean"), minutos_media=("minutos", "mean"))
+            .round(2).reset_index())

@@ -180,6 +180,7 @@ def _metadata(cfg: dict, carta: str, years: list[int], output: str) -> dict:
         "mosaic_source": mosaic.source_for(carta, cfg), "mosaic_encoding": cfg["mosaic"].get("encoding", "col12"),
         # origem
         "code_version": config.code_version(),
+        "config_sha256": config.config_hash(cfg), "inputs": config.inputs_manifest(cfg),
         "exported_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
     }
 
