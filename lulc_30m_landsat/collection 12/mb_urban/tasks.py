@@ -1,16 +1,24 @@
-"""Acompanhamento de tarefas do Earth Engine por conta.
+"""Tarefas do Earth Engine: acompanhamento e fila de exportação.
 
-Nesta primeira versão: só consulta (status). O gestor de fila — manter N tarefas por conta,
-pular assets que já existem, retomar falhas — entra junto com a classificação (Fase 2).
+- `status` / `summary`: tabela das tarefas de uma conta.
+- `run_queue`: recebe uma lista de tarefas (nome, asset de destino, função que cria a tarefa),
+  pula as que já têm asset gravado ou já estão na fila, e inicia as demais respeitando o limite
+  de tarefas simultâneas da conta. Com `wait=True`, fica acompanhando até terminar tudo,
+  reenviando as que falharem (até `retries` vezes). Cada evento é registrado em `logs/`.
 """
 from __future__ import annotations
 
 import datetime as dt
+import json
+import time
+from pathlib import Path
 
 import ee
 import pandas as pd
 
-from . import auth
+from . import auth, config
+
+LOG_DIR = config.PACKAGE_ROOT / "logs"
 
 _STATES = ["RUNNING", "READY", "COMPLETED", "FAILED", "CANCELLED"]
 
@@ -42,3 +50,86 @@ def summary(accounts: list[str]) -> pd.DataFrame:
     df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["conta", "estado"])
     table = df.pivot_table(index="conta", columns="estado", values="descricao", aggfunc="count", fill_value=0)
     return table.reindex(columns=[s for s in _STATES if s in table.columns])
+
+
+# ---------------------------------------------------------------------------------------------
+# fila de exportação
+# ---------------------------------------------------------------------------------------------
+def asset_exists(asset_id: str) -> bool:
+    try:
+        ee.data.getAsset(asset_id)
+        return True
+    except ee.EEException:
+        return False
+
+
+def ensure_folder(asset_id: str) -> None:
+    """Cria (se faltar) a pasta que vai receber o asset. Não apaga nem sobrescreve nada."""
+    parent = asset_id.rsplit("/", 1)[0]
+    if not asset_exists(parent):
+        ee.data.createAsset({"type": "FOLDER"}, parent)
+
+
+def _log(event: dict, log_name: str) -> None:
+    LOG_DIR.mkdir(exist_ok=True)
+    event = {"quando": dt.datetime.now().isoformat(timespec="seconds"), **event}
+    with open(LOG_DIR / f"{log_name}.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+
+def _active_descriptions() -> dict[str, str]:
+    return {t["description"]: t["state"] for t in ee.data.getTaskList()
+            if t.get("state") in ("READY", "RUNNING")}
+
+
+def run_queue(specs, account: str = "default", max_concurrent: int | None = None,
+              wait: bool = False, poll_seconds: int = 120, retries: int = 1,
+              log_name: str = "fila", cfg: dict | None = None) -> pd.DataFrame:
+    """Envia as tarefas respeitando o limite da conta. `specs`: [(nome, asset_id, criar_tarefa)]."""
+    cfg = cfg or config.load()
+    auth.init(account, cfg)
+    limit = max_concurrent or cfg["accounts"][account]["max_concurrent"]
+    pending = list(specs)
+    attempts: dict[str, int] = {}
+    started: dict[str, str] = {}   # nome -> id da tarefa
+    rows = []
+
+    while pending or (wait and started):
+        active = _active_descriptions()
+        # acompanha as que este processo iniciou
+        if started:
+            states = {t["id"]: t for t in ee.data.getTaskList() if t["id"] in started.values()}
+            for name, tid in list(started.items()):
+                t = states.get(tid, {})
+                if t.get("state") in ("COMPLETED", "FAILED", "CANCELLED"):
+                    _log({"tarefa": name, "estado": t["state"], "erro": t.get("error_message")}, log_name)
+                    rows.append({"tarefa": name, "estado": t["state"], "erro": t.get("error_message")})
+                    del started[name]
+                    if t["state"] == "FAILED" and attempts.get(name, 0) <= retries:
+                        pending.append(next(s for s in specs if s[0] == name))
+        free = limit - len(active)
+        while free > 0 and pending:
+            name, asset_id, make = pending.pop(0)
+            if name in active:
+                rows.append({"tarefa": name, "estado": "JÁ NA FILA", "erro": None})
+                continue
+            if asset_exists(asset_id):
+                rows.append({"tarefa": name, "estado": "JÁ EXISTE", "erro": None})
+                continue
+            ensure_folder(asset_id)
+            task = make()
+            task.start()
+            attempts[name] = attempts.get(name, 0) + 1
+            started[name] = task.id
+            _log({"tarefa": name, "estado": "INICIADA", "id": task.id, "asset": asset_id,
+                  "conta": account, "tentativa": attempts[name]}, log_name)
+            rows.append({"tarefa": name, "estado": "INICIADA", "erro": None})
+            free -= 1
+        if not wait:
+            break
+        if pending or started:
+            time.sleep(poll_seconds)
+
+    if pending and not wait:
+        rows += [{"tarefa": s[0], "estado": "AGUARDANDO VAGA", "erro": None} for s in pending]
+    return pd.DataFrame(rows)

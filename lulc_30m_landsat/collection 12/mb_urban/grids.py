@@ -28,14 +28,18 @@ def list_cartas(cfg: dict | None = None, only_hex: bool = True) -> list[str]:
     return sorted(fc.aggregate_array(field).distinct().getInfo())
 
 
-def context(carta: str, cfg: dict | None = None) -> ee.Geometry:
-    """Super carta: a carta e suas vizinhas (mesma regra da Col 11: filterBounds de buffer 2 m)."""
+def context_fc(carta: str, cfg: dict | None = None) -> ee.FeatureCollection:
+    """Super carta como coleção: a carta e as vizinhas que tocam um buffer de 2 m (getContext da Col 11)."""
     cfg = cfg or config.load()
     field = cfg["grids"]["grid_field"]
     fc = cartas_fc(cfg)
     carta_ft = ee.Feature(fc.filter(ee.Filter.eq(field, carta)).first())
-    neighbours = fc.filterBounds(carta_ft.geometry().buffer(cfg["grids"]["context_buffer_m"], 1))
-    return neighbours.geometry().bounds(10)
+    return fc.filterBounds(carta_ft.geometry().buffer(cfg["grids"]["context_buffer_m"], 1))
+
+
+def context(carta: str, cfg: dict | None = None) -> ee.Geometry:
+    """Super carta como retângulo envolvente (usado no mosaico e na classificação da Col 11)."""
+    return context_fc(carta, cfg).geometry().bounds(10)
 
 
 def region(carta: str, cfg: dict | None = None) -> ee.Geometry:
