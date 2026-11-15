@@ -30,30 +30,90 @@ def _window_years(window: str) -> list[int]:
     return list(range(int(a), int(b) + 1))
 
 
-def accuracy(image: ee.Image, carta: str, cfg: dict) -> pd.DataFrame:
-    """Acurácia por ano com as amostras de validação dentro da carta."""
+def _validation_points(carta: str, cfg: dict) -> ee.FeatureCollection:
+    """Amostras de validação da carta + pontos extras do início da série, se já tiverem sido gerados."""
+    from . import tasks
+    region = grids.region(carta, cfg)
+    val = samples.table(cfg).filter(ee.Filter.eq("type", "validation")).filterBounds(region)
+    extra_id = samples.validation_extra_table_id(carta, cfg)
+    if tasks.asset_exists(extra_id):
+        val = val.merge(ee.FeatureCollection(extra_id))
+    return val
+
+
+def _sample_values(image: ee.Image, carta: str, cfg: dict) -> pd.DataFrame:
     years = config.years(cfg)
-    val = samples.table(cfg).filter(ee.Filter.eq("type", "validation")).filterBounds(grids.region(carta, cfg))
     bands = [f"classification_{y}" for y in years]
-    pts = image.select(bands).sampleRegions(collection=val, properties=["class", "range"], scale=30, tileScale=8)
-    feats = pd.DataFrame([f["properties"] for f in pts.getInfo()["features"]])
+    pts = image.select(bands).sampleRegions(collection=_validation_points(carta, cfg),
+                                            properties=["class", "range", "type"], scale=30, tileScale=8)
+    df = pd.DataFrame([f["properties"] for f in pts.getInfo()["features"]])
+    if not df.empty:
+        df["ref"] = (df["class"] == 1).astype(int)
+        df["id"] = range(len(df))
+    return df
+
+
+def _metrics(pred: pd.Series, ref: pd.Series) -> dict:
+    tp = int(((pred == 1) & (ref == 1)).sum()); fp = int(((pred == 1) & (ref == 0)).sum())
+    fn = int(((pred == 0) & (ref == 1)).sum()); tn = int(((pred == 0) & (ref == 0)).sum())
+    prec = tp / (tp + fp) if tp + fp else None
+    rec = tp / (tp + fn) if tp + fn else None
+    f1 = 2 * prec * rec / (prec + rec) if prec and rec else None
+    return {"acuracia_global": (tp + tn) / len(pred) if len(pred) else None,
+            "precisao_urbano": prec, "recall_urbano": rec, "f1_urbano": f1}
+
+
+def _wilson(p: float | None, n: int, z: float = 1.96) -> tuple[float | None, float | None]:
+    """Intervalo de confiança de 95% (Wilson) para uma proporção."""
+    if p is None or n == 0:
+        return None, None
+    den = 1 + z * z / n
+    centro = (p + z * z / (2 * n)) / den
+    meia = z * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5) / den
+    return centro - meia, centro + meia
+
+
+def accuracy(image: ee.Image, carta: str, cfg: dict, df: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Acurácia por ano. Cada amostra vale para os anos da sua janela de estabilidade."""
+    df = _sample_values(image, carta, cfg) if df is None else df
     rows = []
-    if feats.empty:
-        return pd.DataFrame(columns=["carta", "ano", "n", "acuracia_global", "precisao_urbano", "recall_urbano", "f1_urbano"])
-    feats["ref"] = (feats["class"] == 1).astype(int)
-    for y in years:
-        sel = feats[feats["range"].map(lambda r: y in _window_years(r))]
+    if df.empty:
+        return pd.DataFrame(columns=["carta", "ano", "n", "n_urbano", "acuracia_global",
+                                     "precisao_urbano", "recall_urbano", "f1_urbano"])
+    for y in config.years(cfg):
+        sel = df[df["range"].map(lambda r: y in _window_years(r))]
         if sel.empty:
             continue
-        pred, ref = sel[f"classification_{y}"].astype(int), sel["ref"]
-        tp = int(((pred == 1) & (ref == 1)).sum()); fp = int(((pred == 1) & (ref == 0)).sum())
-        fn = int(((pred == 0) & (ref == 1)).sum()); tn = int(((pred == 0) & (ref == 0)).sum())
-        prec = tp / (tp + fp) if tp + fp else None
-        rec = tp / (tp + fn) if tp + fn else None
-        f1 = 2 * prec * rec / (prec + rec) if prec and rec else None
-        rows.append({"carta": carta, "ano": y, "n": len(sel), "n_urbano": int(ref.sum()),
-                     "acuracia_global": (tp + tn) / len(sel), "precisao_urbano": prec,
-                     "recall_urbano": rec, "f1_urbano": f1})
+        rows.append({"carta": carta, "ano": y, "n": len(sel), "n_urbano": int(sel["ref"].sum()),
+                     **_metrics(sel[f"classification_{y}"].astype(int), sel["ref"])})
+    return pd.DataFrame(rows)
+
+
+def accuracy_by_period(image: ee.Image, carta: str, cfg: dict, df: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Acurácia agregada por período, com intervalo de confiança de 95%.
+
+    Junta todos os pares (amostra, ano) do período; o intervalo usa o número de AMOSTRAS distintas
+    (não de pares), para não superestimar a confiança — a mesma amostra se repete em vários anos.
+    """
+    df = _sample_values(image, carta, cfg) if df is None else df
+    rows = []
+    for a, b in cfg["evaluation"]["periods"]:
+        pares = []
+        for y in range(a, b + 1):
+            if f"classification_{y}" not in df:
+                continue
+            sel = df[df["range"].map(lambda r: y in _window_years(r))]
+            pares.append(pd.DataFrame({"id": sel["id"], "pred": sel[f"classification_{y}"].astype(int), "ref": sel["ref"]}))
+        if not pares:
+            continue
+        p = pd.concat(pares)
+        n_amostras = p["id"].nunique()
+        n_urb = p.loc[p["ref"] == 1, "id"].nunique()
+        m = _metrics(p["pred"], p["ref"])
+        lo, hi = _wilson(m["acuracia_global"], n_amostras)
+        rlo, rhi = _wilson(m["recall_urbano"], n_urb)
+        rows.append({"carta": carta, "periodo": f"{a}-{b}", "amostras": n_amostras, "amostras_urbanas": n_urb,
+                     **m, "acuracia_ic95": (lo, hi), "recall_urbano_ic95": (rlo, rhi)})
     return pd.DataFrame(rows)
 
 
@@ -83,9 +143,12 @@ def evaluate_carta(carta: str, cfg: dict | None = None, image: ee.Image | None =
     ref = col11.final_map(carta, cfg["evaluation"]["final_col11_version"].split("_")[1])
     area = pd.DataFrame({"col12": urban_area(image, carta, cfg), "col11": urban_area(ref, carta, cfg)})
     area["dif_km2"] = area["col12"] - area["col11"]
-    return {"carta": carta, "acuracia": accuracy(image, carta, cfg),
-            "acuracia_col11": accuracy(ref, carta, cfg), "area": area,
-            "concordancia_col11": agreement(image, ref, carta, cfg)}
+    df, df11 = _sample_values(image, carta, cfg), _sample_values(ref, carta, cfg)
+    return {"carta": carta, "acuracia": accuracy(image, carta, cfg, df),
+            "acuracia_col11": accuracy(ref, carta, cfg, df11),
+            "acuracia_periodo": accuracy_by_period(image, carta, cfg, df),
+            "acuracia_periodo_col11": accuracy_by_period(ref, carta, cfg, df11),
+            "area": area, "concordancia_col11": agreement(image, ref, carta, cfg)}
 
 
 def summary(results: list[dict]) -> pd.DataFrame:
@@ -116,7 +179,9 @@ def html_report(results: list[dict], cfg: dict, title: str = "Avaliação da rod
     for r in results:
         parts += [f"<h2>{r['carta']} — {cfg.get('cartas_teste', {}).get(r['carta'], '')}</h2>",
                   "<h3>Área urbana (km²)</h3>", r["area"].round(1).to_html(),
-                  "<h3>Acurácia (Col 12)</h3>", r["acuracia"].round(3).to_html(index=False)]
+                  "<h3>Acurácia por período (Col 12), IC 95%</h3>", r["acuracia_periodo"].round(3).to_html(index=False),
+                  "<h3>Acurácia por período (Col 11), IC 95%</h3>", r["acuracia_periodo_col11"].round(3).to_html(index=False),
+                  "<h3>Acurácia por ano (Col 12)</h3>", r["acuracia"].round(3).to_html(index=False)]
     path = REPORT_DIR / f"avaliacao_{now:%Y%m%d_%H%M}.html"
     path.write_text("<html><meta charset='utf-8'><body>" + "\n".join(parts) + "</body></html>", encoding="utf-8")
     return path

@@ -136,3 +136,10 @@ cartas_teste:
 evaluation:
   final_col11_version: C11_v6_SF
   area_scale_m: 30
+  periods: [[1985, 1992], [1993, 2000], [2001, 2008], [2009, 2025]]   # agregação da acurácia
+  extra_validation:                  # pontos extras só para avaliar o início da série
+    window_start: 1985
+    window_end: 1992
+    points_per_class: 100
+    seed: 2026
+    folder: validacao_extra

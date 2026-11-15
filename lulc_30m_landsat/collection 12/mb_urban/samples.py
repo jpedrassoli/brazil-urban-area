@@ -112,3 +112,34 @@ def table(cfg: dict | None = None) -> ee.FeatureCollection:
     """Tabela de amostras usada pela classificação (config `samples.table`)."""
     cfg = cfg or config.load()
     return ee.FeatureCollection(cfg["samples"]["table"])
+
+
+def create_validation_extra(carta: str, cfg: dict | None = None) -> ee.FeatureCollection:
+    """Pontos de validação EXTRAS para o início da série, só para avaliação (nunca usados no treino).
+
+    Sorteio estratificado dentro da carta (hexágono), em áreas estáveis numa janela curta do início
+    (config `evaluation.extra_validation`), com semente própria.
+    """
+    cfg = cfg or config.load()
+    e = cfg["evaluation"]["extra_validation"]
+    years = list(range(e["window_start"], e["window_end"] + 1))
+    window = f"{years[0]}_to_{years[-1]}"
+    n = e["points_per_class"]
+    stable = remap(stable_by_years(years, cfg)).selfMask()
+    pts = stable.stratifiedSample(
+        numPoints=n, classBand="class", region=grids.region(carta, cfg), scale=30, geometries=True,
+        seed=e["seed"], classValues=CLASSES, classPoints=[n] * len(CLASSES), dropNulls=True, tileScale=16)
+    return pts.map(lambda f: f.set("range", window, "grid_name", carta, "type", "validation_extra"))
+
+
+def validation_extra_table_id(carta: str, cfg: dict) -> str:
+    return config.asset_path(cfg["evaluation"]["extra_validation"]["folder"], f"validacao_extra_{carta}", cfg=cfg)
+
+
+def validation_extra_export_spec(carta: str, cfg: dict | None = None):
+    cfg = cfg or config.load()
+    name = f"validacao_extra_{carta}"
+    asset_id = validation_extra_table_id(carta, cfg)
+    fc = create_validation_extra(carta, cfg)
+    return (name, asset_id, lambda: ee.batch.Export.table.toAsset(
+        collection=fc, description=config.task_description(name, cfg), assetId=asset_id))
