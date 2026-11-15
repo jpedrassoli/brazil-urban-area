@@ -22,11 +22,15 @@ mb_urban/
   samples.py        amostras estáveis entre coleções do MapBiomas, treino/validação
   classify.py       Random Forest por carta e ano: probabilidade de 4 classes
   tasks.py          fila de exportação e acompanhamento de tarefas
+  prefilter.py      pré-filtro: probabilidade anual → mapa binário por ano
+  postprocess.py    filtros temporais (ponto de quebra) e espaciais; mapa final por carta
+  evaluate.py       acurácia, área urbana e comparação com a Col 11, por carta
   col11.py          acesso aos resultados da Col 11, para comparação
 notebooks/          um notebook por etapa, rodável localmente (VS Code) ou no Colab
   01_mosaico.ipynb
   02_amostras.ipynb
   03_classificacao.ipynb
+  04_avaliacao.ipynb
 verificacao/        scripts JS para conferir o porte contra a versão de produção da Col 11 no Code Editor
 ```
 

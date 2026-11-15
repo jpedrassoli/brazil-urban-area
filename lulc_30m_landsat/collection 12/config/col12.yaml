@@ -106,3 +106,24 @@ postprocess:
   # Teste: processar só dentro da máscara espacial com margem (mesmo mapa final esperado). Desligado.
   mask_only: false
   mask_margin_px: 20
+
+# Escopo das rodadas: "desenvolvimento" (cartas_teste) ou "brasil" (todas as cartas da grade hexagonal)
+scope: desenvolvimento
+cartas_teste:
+  SF-23-Y-C: São Paulo — metrópole densa (carta piloto)
+  SF-23-Z-B: Rio de Janeiro — metrópole costeira, relevo, favelas
+  SE-23-Z-C: Belo Horizonte — metrópole no interior, relevo
+  SD-23-Y-C: Brasília — sem amostras estáveis na Col 11
+  SH-22-Y-B: Porto Alegre — Sul, crescimento lento
+  SC-25-V-A: Recife — litoral do Nordeste, mangue
+  SC-24-V-C: Petrolina — Semiárido, agricultura irrigada
+  SA-20-Z-D: Manaus — Amazônia; Col 11 usou a probabilidade da Col 10
+  SA-22-X-D: Belém — Amazônia costeira
+  SC-21-Z-C: Sinop — fronteira agrícola, cidade nova
+  SE-21-Y-D: Corumbá — Pantanal, cidade pequena
+  NA-22-V-B: Oiapoque — extremo Norte, quase sem urbano
+
+# Avaliação
+evaluation:
+  final_col11_version: C11_v6_SF
+  area_scale_m: 30

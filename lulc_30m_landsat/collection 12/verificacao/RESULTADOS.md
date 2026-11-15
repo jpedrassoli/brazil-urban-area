@@ -18,3 +18,17 @@
 - **Resultado:** **100% dos pixels idênticos** nas 4 bandas de probabilidade, nos três anos
   (comparação na resolução de 30 m, sobre toda a carta)
 - **Tempo:** 12 a 16 minutos por tarefa anual, rodando 4 tarefas simultâneas na mesma conta
+
+## Pré-filtro + pós-processamento (`mb_urban.prefilter` e `mb_urban.postprocess`)
+
+- **Data:** 2026-11-14
+- **Referência:** mapa final oficial da Col 11, `URBAN/classification_sf/SF-23-Y-C_v6` (versão `C11_v6_SF`)
+- **Caso:** carta `SF-23-Y-C`, 41 anos, refeito a partir das probabilidades da Col 11
+  (`postprocess.probability_source: col11`)
+- **Resultado:** 4 anos idênticos e 37 com diferença de **1 a 13 pixels** em 20,6 milhões
+  (no máximo 0,0005% dos ~3 milhões de pixels urbanos). As diferenças são manchas pequenas, com
+  tamanho perto dos limites do filtro espacial (ruído de 10 px), no interior da carta. Isso é
+  compatível com o comportamento conhecido de `connectedPixelCount`, que conta componentes por
+  bloco de processamento e pode variar perto desses limites conforme a divisão em blocos de cada
+  exportação. Não é diferença de método.
+- **Tempo:** 14 minutos, 33 EECU-hora, para a carta inteira e os 41 anos.

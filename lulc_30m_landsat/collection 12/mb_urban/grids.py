@@ -61,3 +61,11 @@ def shard(items: list[str], index: int, total: int) -> list[str]:
     if not 1 <= index <= total:
         raise ValueError("index deve estar entre 1 e total")
     return items[index - 1::total]
+
+
+def cartas_in_scope(cfg: dict | None = None) -> list[str]:
+    """Cartas da rodada: as de teste (scope: desenvolvimento) ou todas (scope: brasil)."""
+    cfg = cfg or config.load()
+    if cfg.get("scope", "desenvolvimento") == "brasil":
+        return list_cartas(cfg)
+    return list(cfg["cartas_teste"])
