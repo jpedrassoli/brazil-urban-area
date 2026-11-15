@@ -11,7 +11,7 @@ e o commit de produção que porta.
 ## Estrutura
 
 ```
-config/col12.yaml   configuração central (anos, projeto, destino dos assets, grades, mosaico)
+config/col12.exemplo.yaml   configuração de exemplo (anos, projeto, destino dos assets, grades, mosaico)
 mb_urban/
   config.py         leitura da configuração e montagem de caminhos de asset
   auth.py           login e inicialização do Earth Engine
@@ -71,8 +71,15 @@ Depois abra os notebooks no VS Code ou no Jupyter e use a conta `default`.
 
 ### Sua própria configuração
 
-O arquivo `config/col12.yaml` traz os valores do projeto. Para usar outro projeto do Cloud ou outra
-pasta de destino sem alterar o arquivo versionado, copie-o, edite a cópia e aponte para ela:
+O repositório traz `config/col12.exemplo.yaml`. Copie para `config/col12.yaml` (esse arquivo não é
+versionado) e preencha pelo menos:
+
+- `cloud_project`: o seu projeto do Google Cloud registrado no Earth Engine;
+- `destinations`: a pasta de assets onde os resultados serão gravados (precisa existir);
+- `samples.table`: o asset da tabela de amostras, depois de subir o CSV de
+  [`collection 11/dados`](../collection%2011/dados).
+
+Para usar um arquivo em outro lugar, aponte a variável `MB_URBAN_CONFIG`:
 
 ```bash
 # Linux/macOS
@@ -81,7 +88,15 @@ export MB_URBAN_CONFIG=/caminho/para/minha_config.yaml
 $env:MB_URBAN_CONFIG = "C:\caminho\para\minha_config.yaml"
 ```
 
-Campos que normalmente mudam: `cloud_project` e `destinations`.
+Nos notebooks, sem um `config/col12.yaml` próprio, basta preencher `PROJETO` no bloco de preparação.
+
+**Insumos de terceiros.** Algumas etapas leem assets que não são da sua conta: a grade hexagonal de
+cartas, a imagem de limiares por carta, a máscara espacial e o índice de infraestrutura (veja os
+comentários no início do arquivo de exemplo). Se você não tiver leitura neles, peça acesso aos
+responsáveis ou substitua-os pelos seus.
+
+**Avaliação.** Por padrão, o notebook de avaliação compara com a classe de área urbanizada da coleção
+pública do MapBiomas, que qualquer pessoa acessa.
 
 ### Teste → produção
 

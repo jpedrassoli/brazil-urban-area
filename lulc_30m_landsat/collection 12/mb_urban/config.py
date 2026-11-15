@@ -1,4 +1,8 @@
-"""Leitura da configuração central (config/col12.yaml)."""
+"""Leitura da configuração central.
+
+Ordem de procura: argumento de `load()` > variável de ambiente MB_URBAN_CONFIG >
+`config/col12.yaml` (configuração local, não versionada) > `config/col12.exemplo.yaml` (exemplo público).
+"""
 from __future__ import annotations
 
 import os
@@ -8,14 +12,20 @@ from pathlib import Path
 import yaml
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_CONFIG = PACKAGE_ROOT / "config" / "col12.yaml"
+LOCAL_CONFIG = PACKAGE_ROOT / "config" / "col12.yaml"
+EXAMPLE_CONFIG = PACKAGE_ROOT / "config" / "col12.exemplo.yaml"
+
+
+def config_path(path: str | os.PathLike | None = None) -> Path:
+    if path or os.environ.get("MB_URBAN_CONFIG"):
+        return Path(path or os.environ["MB_URBAN_CONFIG"])
+    return LOCAL_CONFIG if LOCAL_CONFIG.exists() else EXAMPLE_CONFIG
 
 
 @lru_cache(maxsize=None)
 def load(path: str | os.PathLike | None = None) -> dict:
-    """Carrega o YAML. Ordem: argumento > variável MB_URBAN_CONFIG > config/col12.yaml."""
-    path = Path(path or os.environ.get("MB_URBAN_CONFIG") or DEFAULT_CONFIG)
-    with open(path, encoding="utf-8") as f:
+    """Carrega a configuração (veja a ordem de procura no topo do módulo)."""
+    with open(config_path(path), encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 

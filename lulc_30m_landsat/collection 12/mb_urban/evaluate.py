@@ -136,11 +136,34 @@ def agreement(image: ee.Image, reference: ee.Image, carta: str, cfg: dict) -> pd
     return pd.Series({int(k[-4:]): v for k, v in res.items()}).sort_index()
 
 
+def reference_map(carta: str, cfg: dict) -> ee.Image:
+    """Mapa de referência para comparação (config `evaluation.reference`):
+    - "col11": mapa final da Col 11 (assets internos da equipe);
+    - "mapbiomas_publico": classe de área urbanizada (24) da coleção integrada pública do MapBiomas,
+      acessível a qualquer pessoa. Anos fora da coleção ficam sem dado."""
+    e = cfg["evaluation"]
+    ref = e.get("reference", "col11")
+    if ref == "col11":
+        return col11.final_map(carta, e["final_col11_version"].split("_")[1])
+    if ref != "mapbiomas_publico":
+        raise ValueError("evaluation.reference deve ser 'col11' ou 'mapbiomas_publico'")
+    pub = e["public_reference"]
+    lulc = ee.Image(pub["asset"])
+    first, last = pub["years"]
+    bands = []
+    for y in config.years(cfg):
+        b = f"classification_{y}"
+        bands.append(lulc.select(b).eq(pub.get("urban_class", 24)).rename(b) if first <= y <= last
+                     else ee.Image(0).selfMask().rename(b))
+    return ee.Image.cat(bands)
+
+
 def evaluate_carta(carta: str, cfg: dict | None = None, image: ee.Image | None = None, suffix: str = "") -> dict:
-    """Todas as métricas de uma carta. `image` padrão: o mapa final da rodada no destino."""
+    """Todas as métricas de uma carta. `image` padrão: o mapa final da rodada no destino.
+    As colunas com sufixo "col11" referem-se ao mapa de referência (`evaluation.reference`)."""
     cfg = cfg or config.load()
     image = image if image is not None else map_asset(carta, cfg, suffix)
-    ref = col11.final_map(carta, cfg["evaluation"]["final_col11_version"].split("_")[1])
+    ref = reference_map(carta, cfg)
     area = pd.DataFrame({"col12": urban_area(image, carta, cfg), "col11": urban_area(ref, carta, cfg)})
     area["dif_km2"] = area["col12"] - area["col11"]
     df, df11 = _sample_values(image, carta, cfg), _sample_values(ref, carta, cfg)

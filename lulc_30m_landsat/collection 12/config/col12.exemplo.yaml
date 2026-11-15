@@ -1,3 +1,11 @@
+# EXEMPLO de configuração — copie para config/col12.yaml (não versionado) e preencha os campos
+# "seu-projeto-do-cloud". Também é possível apontar outro arquivo com a variável MB_URBAN_CONFIG.
+#
+# Insumos lidos de assets de terceiros (podem exigir permissão de leitura): grade hexagonal de cartas
+# (grids.cartas_hex), imagem de limiares (postprocess.threshold_image), máscara espacial
+# (postprocess.spatial_mask), índice de infraestrutura (postprocess.irs_asset) e as grades de
+# exportação (postprocess.cartas_export, postprocess.cartas_hex).
+
 # MapBiomas Coleção 12 — Áreas Urbanizadas (Landsat 30 m)
 # Configuração central. Os scripts leem TUDO daqui: nada de comentar/descomentar código.
 
@@ -5,7 +13,7 @@ collection: 12
 years: [1985, 2025]          # intervalo inclusivo; atualize o ano final quando houver novo ano
 
 # Projeto do Google Cloud usado pelo Earth Engine (cotas e faturamento)
-cloud_project: mapbiomas-brazil
+cloud_project: seu-projeto-do-cloud   # projeto do Google Cloud registrado no Earth Engine
 
 # Prefixo do nome de toda tarefa enviada, para identificar no painel de tarefas de um projeto compartilhado
 task_prefix: urban_col12_
@@ -14,21 +22,17 @@ task_prefix: urban_col12_
 # `credentials` é o arquivo salvo por `python -m mb_urban.auth login <nome>`.
 # Em Colab / conta de outra pessoa da equipe, use a conta "default" (login padrão do ee).
 accounts:
-  conta1:                    # conta Gmail — dona de users/pedrassoli_julio
-    credentials: ~/.config/earthengine/mb_urban/conta1.json
-    max_concurrent: 4
-  conta2:                    # conta USP — users/pedrassoli-usp
-    credentials: ~/.config/earthengine/mb_urban/conta2.json
-    max_concurrent: 4
   default:
-    credentials: null        # usa o login padrão do earthengine-api
+    credentials: null        # login padrão do earthengine-api (ou do gcloud, no Colab)
     max_concurrent: 4
+  # para usar mais de uma conta na mesma máquina, acrescente entradas com `credentials: <arquivo>`
+  # e faça o login de cada uma com: python -m mb_urban.auth login <nome>
 
 # Destino dos assets gerados. Troque `destination` para "producao" quando entrar em produção.
 destination: teste
 destinations:
-  teste: projects/jpedrassoli/assets/MB-COLLECTION-12       # pessoal; as duas contas gravam aqui
-  producao: projects/mapbiomas-brazil/assets/LAND-COVER/COLLECTION-12/URBAN
+  teste: projects/seu-projeto-do-cloud/assets/mb_urban_col12          # pasta de testes (precisa existir)
+  producao: projects/seu-projeto-do-cloud/assets/mb_urban_col12_producao
 
 # Grades
 grids:
@@ -45,7 +49,7 @@ mosaic:
   store_masked: true         # ao gravar, só dentro da máscara espacial + margem (economiza espaço)
   mask_margin_m: 180         # margem = raio do kernel de vizinhança do pré-filtro (6 px)
   # cartas de teste com mosaico gravado (as demais usam o mosaico calculado na hora)
-  stored_cartas: [SF-23-Y-C, SD-23-Y-C, SC-25-V-A, SC-24-V-C, SA-20-Z-D, SA-22-X-D, SC-21-Z-C, NA-22-V-B]
+  stored_cartas: []
   features_table: amostras_mosaico   # tabelas com os valores do mosaico nos pontos de amostra (por carta)
   encoding: col12            # col12 = sem saturação das frações/NDFI; col11 = idêntico à Col 11 (só para conferência)
 
@@ -68,7 +72,7 @@ samples:
   # Tabela de amostras usada pela classificação: cópia da tabela de produção da Col 11 (mesmo sorteio com
   # sample_order: column). Para reproduzir a Col 11 pixel a pixel, use a original:
   # projects/ee-ers/assets/mapbiomas/col11/samples/stable_samples_by_range_merged_v1 com sample_order: ee_random_column
-  table: projects/jpedrassoli/assets/MB-COLLECTION-12/amostras_col11/stable_samples_by_range_merged_v1
+  table: projects/seu-projeto-do-cloud/assets/amostras_col11   # suba o CSV de collection 11/dados
 
 # Classificação (porte de classification_batch_v3.js + class_lib.js)
 classification:
@@ -119,22 +123,16 @@ postprocess:
 # Escopo das rodadas: "desenvolvimento" (cartas_teste) ou "brasil" (todas as cartas da grade hexagonal)
 scope: desenvolvimento
 cartas_teste:
-  SF-23-Y-C: São Paulo — metrópole densa (carta piloto)
-  SF-23-Z-B: Rio de Janeiro — metrópole costeira, relevo, favelas
-  SE-23-Z-C: Belo Horizonte — metrópole no interior, relevo
-  SD-23-Y-C: Brasília — sem amostras estáveis na Col 11
-  SH-22-Y-B: Porto Alegre — Sul, crescimento lento
-  SC-25-V-A: Recife — litoral do Nordeste, mangue
-  SC-24-V-C: Petrolina — Semiárido, agricultura irrigada
-  SA-20-Z-D: Manaus — Amazônia; Col 11 usou a probabilidade da Col 10
-  SA-22-X-D: Belém — Amazônia costeira
-  SC-21-Z-C: Sinop — fronteira agrícola, cidade nova
-  SE-21-Y-D: Corumbá — Pantanal, cidade pequena
-  NA-22-V-B: Oiapoque — extremo Norte, quase sem urbano
+  SF-23-Y-C: São Paulo (exemplo)
 
 # Avaliação
 evaluation:
+  reference: mapbiomas_publico     # mapbiomas_publico (qualquer pessoa) ou col11 (assets internos da equipe)
   final_col11_version: C11_v6_SF
+  public_reference:
+    asset: projects/mapbiomas-public/assets/brazil/lulc/collection10_1/mapbiomas_brazil_collection10_1_coverage_v1
+    years: [1985, 2024]
+    urban_class: 24
   area_scale_m: 30
   periods: [[1985, 1992], [1993, 2000], [2001, 2008], [2009, 2025]]   # agregação da acurácia
   extra_validation:                  # pontos extras só para avaliar o início da série
