@@ -71,7 +71,7 @@ def classify_year(carta: str, year: int, cfg: dict | None = None) -> ee.Image:
     c = cfg["classification"]
     context = grids.context(carta, cfg)
     region = grids.region(carta, cfg)
-    img = mosaic.get(year, context, cfg)
+    img = mosaic.get(year, context, cfg, carta=carta)
     table = features_table(carta, cfg) if _use_features_table(carta, cfg) else None
     if table is not None:
         # mosaico gravado só na máscara: os valores nos pontos de treino vêm da tabela da carta
@@ -102,7 +102,8 @@ def features_table(carta: str, cfg: dict) -> ee.FeatureCollection:
 
 def _use_features_table(carta: str, cfg: dict) -> bool:
     m = cfg["mosaic"]
-    return m["source"] == "asset" and m.get("store_masked", True) and carta in m.get("stored_cartas", [])
+    return (mosaic.source_for(carta, cfg) == "asset" and m.get("store_masked", True)
+            and carta in m.get("stored_cartas", []))
 
 
 def features_export_spec(carta: str, years: list[int] | None = None, cfg: dict | None = None):
@@ -148,7 +149,7 @@ def _metadata(cfg: dict, carta: str, years: list[int], output: str) -> dict:
         "description": (f"Col {cfg['collection']}; probabilidade de 4 classes (Random Forest, "
                         f"{c['trees']} árvores); {c['urban_samples']} amostras urbanas / "
                         f"{c['urban_samples'] * c['balance']} não urbanas; mosaico "
-                        f"{cfg['mosaic']['source']} ({cfg['mosaic'].get('encoding', 'col12')}); "
+                        f"{mosaic.source_for(carta, cfg)} ({cfg['mosaic'].get('encoding', 'col12')}); "
                         f"saída {output}"),
         # parâmetros
         "output_format": output, "year_first": min(years), "year_last": max(years),
@@ -156,7 +157,7 @@ def _metadata(cfg: dict, carta: str, years: list[int], output: str) -> dict:
         "samples_urban": c["urban_samples"], "samples_balance": c["balance"],
         "samples_order": c.get("sample_order", "column"), "training_order": c.get("training_order", "sorted"),
         "samples_table": cfg["samples"]["table"],
-        "mosaic_source": cfg["mosaic"]["source"], "mosaic_encoding": cfg["mosaic"].get("encoding", "col12"),
+        "mosaic_source": mosaic.source_for(carta, cfg), "mosaic_encoding": cfg["mosaic"].get("encoding", "col12"),
         # origem
         "code_version": config.code_version(),
         "exported_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),

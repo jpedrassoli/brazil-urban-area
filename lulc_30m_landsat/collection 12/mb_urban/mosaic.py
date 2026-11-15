@@ -3,7 +3,8 @@
 Duas fontes, escolhidas em config (`mosaic.source`), que entregam a MESMA imagem:
   - "on_the_fly": calculado do Landsat na hora — porte fiel de `mosaic_production.js` na versão de
     produção da Col 11 (`collection 11/codes_producao/02_classificacao/users/edimilsonrodriguessantos/mapbiomas/Col10/classificacao/mosaic_production.js`, commit bf9c98b0);
-  - "asset":      lido de uma ImageCollection de mosaicos pré-processados (propriedade `year`).
+  - "asset":      lido de uma ImageCollection de mosaicos pré-processados (propriedade `year`);
+  - "auto":       "asset" nas cartas de `mosaic.stored_cartas` e "on_the_fly" nas demais.
 
 O resto do pipeline só chama `get(year, roi)` e não sabe qual fonte foi usada.
 
@@ -118,10 +119,20 @@ def from_asset(year: int, roi: ee.Geometry, asset: str, encoding: str | None = N
     return col.mosaic().select(BANDS)
 
 
-def get(year: int, roi: ee.Geometry, cfg: dict | None = None) -> ee.Image:
+def source_for(carta: str | None, cfg: dict) -> str:
+    """Fonte efetiva do mosaico para a carta ("auto" escolhe pela lista `mosaic.stored_cartas`)."""
+    m = cfg["mosaic"]
+    if m["source"] != "auto":
+        return m["source"]
+    if carta is None:
+        raise ValueError('mosaic.source "auto" precisa da carta')
+    return "asset" if carta in m.get("stored_cartas", []) else "on_the_fly"
+
+
+def get(year: int, roi: ee.Geometry, cfg: dict | None = None, carta: str | None = None) -> ee.Image:
     """Ponto único de acesso ao mosaico, segundo `mosaic.source` da configuração."""
     cfg = cfg or config.load()
-    m = cfg["mosaic"]
+    m = dict(cfg["mosaic"], source=source_for(carta, cfg))
     if m["source"] == "on_the_fly":
         img = on_the_fly(year, roi, m.get("encoding", "col12"), m.get("single_pass", True))
     elif m["source"] == "asset":

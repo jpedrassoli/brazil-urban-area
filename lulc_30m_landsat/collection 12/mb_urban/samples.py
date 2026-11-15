@@ -35,13 +35,35 @@ def remap(image: ee.Image) -> ee.Image:
     return image.remap(REMAP_FROM, REMAP_TO).rename("class")
 
 
+def collections_for_year(year: int, cfg: dict) -> list[int]:
+    """Coleções usadas na estabilidade do ano.
+
+    `samples.stability_mode`:
+      - "all" (Col 11): todas as `stability_collections`, que precisam cobrir o ano;
+      - "available": só as que cobrem o ano (`samples.lulc_last_year`), para janelas que passam do
+        último ano da coleção mais antiga. Em anos cobertos por todas, é igual a "all".
+    """
+    s = cfg["samples"]
+    cols = list(s["stability_collections"])
+    if s.get("stability_mode", "all") == "available":
+        last = {int(k): v for k, v in s.get("lulc_last_year", {}).items()}
+        cols = [c for c in cols if last.get(c, 0) >= year]
+        if len(cols) < s.get("min_collections", 1):
+            raise ValueError(f"{year}: só {len(cols)} coleção(ões) cobrem o ano (mínimo {s.get('min_collections', 1)})")
+    return cols
+
+
 def stable_by_year(year: int, cfg: dict | None = None) -> ee.Image:
-    """Classe da coleção de referência onde todas as coleções concordam no ano (stableCollectionByYear)."""
+    """Classe da coleção de referência onde todas as coleções concordam no ano (stableCollectionByYear).
+
+    A referência é `samples.reference_collection`; se ela não cobrir o ano (modo "available"), usa a
+    coleção mais recente entre as que cobrem."""
     cfg = cfg or config.load()
     s = cfg["samples"]
     band = f"classification_{year}"
-    ref = _lulc(s["reference_collection"], cfg).select(band)
-    cols = s["stability_collections"]
+    cols = collections_for_year(year, cfg)
+    ref_col = s["reference_collection"] if s["reference_collection"] in cols else max(cols)
+    ref = _lulc(ref_col, cfg).select(band)
     mean = ee.ImageCollection([_lulc(c, cfg).select(band) for c in cols]).sum().divide(len(cols))
     return ref.where(ref.eq(mean), ref).where(ref.neq(mean), 0).selfMask()
 

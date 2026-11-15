@@ -41,7 +41,8 @@ grids:
   grid_field: grid_name
   context_buffer_m: 2        # buffer usado na Col 11 para achar as cartas vizinhas (super carta)
 
-# Fonte do mosaico anual: "on_the_fly" (calculado a partir do Landsat) ou "asset" (pré-processado)
+# Fonte do mosaico anual: "on_the_fly" (calculado a partir do Landsat), "asset" (pré-processado) ou
+# "auto" (asset nas cartas de stored_cartas, calculado na hora nas demais)
 mosaic:
   source: on_the_fly
   asset: null                # ImageCollection com mosaicos pré-processados; vazio = <destino>/mosaicos
@@ -65,6 +66,12 @@ samples:
     8: projects/mapbiomas-public/assets/brazil/lulc/collection8/mapbiomas_collection80_integration_v1
     9: projects/mapbiomas-public/assets/brazil/lulc/collection9/mapbiomas_collection90_integration_v1
     10: projects/mapbiomas-public/assets/brazil/lulc/collection10_1/mapbiomas_brazil_collection10_1_coverage_v1
+    11: projects/mapbiomas-public/assets/brazil/lulc/collection11/mapbiomas_brazil_collection11_coverage_v3
+  lulc_last_year: {6: 2020, 7: 2021, 8: 2022, 9: 2023, 10: 2024, 11: 2025}   # último ano de cada coleção
+  # "all" (Col 11): todas as stability_collections em todos os anos; "available": em cada ano, só as que o cobrem
+  # (permite janelas até o último ano da coleção mais recente)
+  stability_mode: all
+  min_collections: 1                  # no modo "available", mínimo de coleções que precisam cobrir o ano
   window_start: 1985
   window_end: 2020                    # as janelas vão de ano inicial até este ano
   window_step: 8                      # 1985, 1993, 2001, 2009
@@ -87,7 +94,7 @@ classification:
                                       # as_returned = ordem da Col 11 (só para reproduzi-la)
   trees: 120
   min_leaf_population: 5
-  output: multiband                   # multiband (1 imagem por carta, todos os anos) ou per_year (Col 11)
+  output: per_year                    # per_year (1 imagem por ano, como na Col 11) ou multiband (falhou por memória na carta piloto)
   folder: probabilidades              # ImageCollection no destino (lida pelo pré-filtro)
 
 # Pré-filtro e pós-processamento (porte de batchFilters.js, batchResults.js e
