@@ -32,3 +32,31 @@
   bloco de processamento e pode variar perto desses limites conforme a divisão em blocos de cada
   exportação. Não é diferença de método.
 - **Tempo:** 14 minutos, 33 EECU-hora, para a carta inteira e os 41 anos.
+
+## Limiar por carta: porte × tabela da Col 11 (2026-11-15)
+
+`mb_urban.thresholds` rodado com as probabilidades da Col 11 e os pontos de validação da tabela de amostras
+da Col 11 (janela do ano), nas 12 cartas de teste, 41 anos. Comparado com `col11/thresholdMedianByCarta`
+(cópia em `dados/col11_limiares_por_carta.csv`). `cutPercentile` é a banda `percentil` usada pelo pré-filtro.
+
+| Carta | cutPercentile porte | cutPercentile Col 11 | Youden porte | Youden Col 11 |
+|---|---|---|---|---|
+| SF-23-Y-C | 62,5 | 62,5 | 27 | 28 |
+| SF-23-Z-B | 63,6 | 62,7 | 24 | 29 |
+| SE-23-Z-C | 56,2 | 53,9 | 26 | 30 |
+| SD-23-Y-C | 57,0 | 44,8 | 37 | 29 |
+| SH-22-Y-B | 69,6 | 65,8 | 28 | 38 |
+| SC-25-V-A | 46,2 | 44,9 | 26 | 29 |
+| SC-24-V-C | 51,1 | 48,8 | 26 | 38 |
+| SA-20-Z-D | 80,8 | 57,8 | 64 | 34 |
+| SA-22-X-D | 60,8 | 53,6 | 24 | 31 |
+| SC-21-Z-C | 59,8 | 64,8 | 35 | 33 |
+| SE-21-Y-D | 32,8 | 33,6 | 18 | 23 |
+| NA-22-V-B | sem dados | 51,9 (mediana nacional) | sem dados | 30 |
+
+Leitura: a fórmula reproduz a Col 11 onde os conjuntos de validação se parecem (São Paulo idêntico; Recife,
+Corumbá, Rio e Petrolina a 1–3 pontos). Diverge onde a validação da Col 11 foi outra: Brasília (sem amostras
+estáveis na Col 11) e Manaus (na Col 11 a probabilidade da carta veio da Col 10). Com a tabela de amostras
+da Col 11 há em média 63 pontos urbanos por carta-ano (a Col 10 usava 220). Conclusão: método recuperado; os
+pontos de validação exatos da Col 11 não são conhecidos. Para a Col 12, os limiares serão calculados com a
+validação da tabela nova.
