@@ -166,7 +166,8 @@ def mask_with_margin(cfg: dict) -> ee.Image:
 
 
 def export_spec(year: int, carta: str, cfg: dict | None = None, region: ee.Geometry | None = None,
-                suffix: str = "", masked: bool | None = None):
+                suffix: str = "", masked: bool | None = None, extra_mask: ee.Image | None = None,
+                extra_props: dict | None = None):
     """Tarefa (nome, asset_id, criar_tarefa) que grava o mosaico de uma carta e ano na coleção de mosaicos.
 
     A grade é EPSG:4326 a 30 m, a mesma usada pela classificação: os pixels do asset coincidem com os
@@ -185,7 +186,9 @@ def export_spec(year: int, carta: str, cfg: dict | None = None, region: ee.Geome
     img = on_the_fly(year, region, encoding, m.get("single_pass", True))
     if masked:
         img = img.updateMask(mask_with_margin(cfg))
-    img = img.set({
+    if extra_mask is not None:
+        img = img.updateMask(extra_mask)
+    img = img.set(extra_props or {}).set({
         "year": year, "grid": carta, "collection_id": cfg["collection"], "theme": "Urban Area",
         "product_type": "mosaic", "mosaic_encoding": encoding, "mosaic_version": m.get("version", 1),
         "bands": len(BANDS),
@@ -196,4 +199,15 @@ def export_spec(year: int, carta: str, cfg: dict | None = None, region: ee.Geome
     })
     return (name, asset_id, lambda: ee.batch.Export.image.toAsset(
         image=img, description=config.task_description(name, cfg), assetId=asset_id, region=region,
-        crs="EPSG:4326", scale=30, maxPixels=1e13))
+        crs="EPSG:4326", crsTransform=[GRID_DEG, 0, 0, 0, -GRID_DEG, 0], maxPixels=1e13))
+
+
+def ring_export_spec(year: int, carta: str, cfg: dict | None = None):
+    """Complemento de um mosaico gravado com a margem antiga (180 m): grava só o anel que faltou até a margem
+    em pixels (`mask_margin_px`), com as mesmas propriedades de ano, codificação e versão. A leitura
+    (`from_asset`) junta os dois sem sobreposição. Nada é apagado nem sobrescrito."""
+    cfg = cfg or config.load()
+    collection = cfg["mosaic"].get("asset") or config.asset_path("mosaicos", cfg=cfg)
+    old = ee.Image(f"{collection}/mosaic_{year}_{carta}").select(0).mask().unmask(0)
+    return export_spec(year, carta, cfg, suffix="_anel", extra_mask=old.Not(),
+                       extra_props={"complement_of": f"mosaic_{year}_{carta}"})
