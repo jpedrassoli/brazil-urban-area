@@ -65,8 +65,10 @@ samples:
   points_per_class: 250
   seed: 42
   train_fraction: 0.8
-  # Tabela de amostras usada pela classificação. Para reproduzir a Col 11, aponte para a tabela de produção.
-  table: projects/ee-ers/assets/mapbiomas/col11/samples/stable_samples_by_range_merged_v1
+  # Tabela de amostras usada pela classificação: cópia da tabela de produção da Col 11 (mesmo sorteio com
+  # sample_order: column). Para reproduzir a Col 11 pixel a pixel, use a original:
+  # projects/ee-ers/assets/mapbiomas/col11/samples/stable_samples_by_range_merged_v1 com sample_order: ee_random_column
+  table: projects/jpedrassoli/assets/MB-COLLECTION-12/amostras_col11/stable_samples_by_range_merged_v1
 
 # Classificação (porte de classification_batch_v3.js + class_lib.js)
 classification:
