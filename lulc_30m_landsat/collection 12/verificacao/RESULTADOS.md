@@ -11,7 +11,7 @@
 
 ## Classificação (`mb_urban.classify`, codificação `col11`, formato por ano)
 
-- **Data:** 2026-11-15
+- **Data:** 2026-11-14
 - **Referência:** probabilidades exportadas na produção da Col 11 (`classification_batch_v3.js`,
   commit `0c0239bf`), lidas com `mb_urban.col11.probability`
 - **Caso:** carta `SF-23-Y-C`, anos 1985, 2005 e 2020, tabela de amostras de produção da Col 11
