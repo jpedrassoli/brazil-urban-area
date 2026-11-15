@@ -147,7 +147,9 @@ def carta_export_spec(carta: str, cfg: dict | None = None):
     as amostras da super carta (ela e as vizinhas). Por isso, gere as cartas de interesse E as vizinhas
     (`cartas_for_build`) e depois junte tudo com `merge_export_spec`."""
     cfg = cfg or config.load()
-    fc = split_train_validation(ee.FeatureCollection([create(carta, w, cfg) for w in windows(cfg)]).flatten(), cfg)
+    # treino/validação separados em cada janela ANTES de juntar: o sorteio (randomColumn) depende da identificação
+    # interna de cada ponto, que muda ao juntar; assim a tarefa inteira e a alternativa por janela dão a mesma tabela
+    fc = ee.FeatureCollection([split_train_validation(create(carta, w, cfg), cfg) for w in windows(cfg)]).flatten()
     name = f"amostras_{carta}"
     asset_id = carta_table_id(carta, cfg)
     # alternativa se faltar tempo/memória (cartas grandes da Amazônia): uma tarefa por janela, mesmo resultado
