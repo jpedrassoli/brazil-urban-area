@@ -42,10 +42,21 @@ def training_samples(year: int, context: ee.Geometry, cfg: dict | None = None) -
     s = (samples.table(cfg)
          .filter(ee.Filter.eq("range", window_for_year(year)))
          .filterBounds(context))
-    urban = (s.filter(ee.Filter.eq("class", 1)).filter(ee.Filter.eq("type", "classification"))
-             .randomColumn().sort("random").limit(c["urban_samples"]))
-    other = (s.filter(ee.Filter.neq("class", 1)).filter(ee.Filter.eq("type", "classification"))
-             .randomColumn().sort("random").limit(c["urban_samples"] * c["balance"]))
+    def draw(fc, n):
+        # "column": ordena pela coluna `random` gravada na tabela — o mesmo sorteio em qualquer cópia
+        #           ou upload da tabela (padrão da Col 12).
+        # "ee_random_column": recalcula com randomColumn() como na Col 11; o sorteio muda se a tabela
+        #           for copiada ou subida de novo. Use só com a tabela original para reproduzir a Col 11.
+        order = c.get("sample_order", "column")
+        if order == "ee_random_column":
+            fc = fc.randomColumn()
+        elif order != "column":
+            raise ValueError("classification.sample_order deve ser 'column' ou 'ee_random_column'")
+        return fc.sort("random").limit(n)
+
+    train = s.filter(ee.Filter.eq("type", "classification"))
+    urban = draw(train.filter(ee.Filter.eq("class", 1)), c["urban_samples"])
+    other = draw(train.filter(ee.Filter.neq("class", 1)), c["urban_samples"] * c["balance"])
     return urban.merge(other)
 
 
@@ -94,6 +105,7 @@ def _metadata(cfg: dict, carta: str, years: list[int], output: str) -> dict:
         "output_format": output, "year_first": min(years), "year_last": max(years),
         "rf_trees": c["trees"], "rf_min_leaf_population": c["min_leaf_population"],
         "samples_urban": c["urban_samples"], "samples_balance": c["balance"],
+        "samples_order": c.get("sample_order", "column"),
         "samples_table": cfg["samples"]["table"],
         "mosaic_source": cfg["mosaic"]["source"], "mosaic_encoding": cfg["mosaic"].get("encoding", "col12"),
         # origem
