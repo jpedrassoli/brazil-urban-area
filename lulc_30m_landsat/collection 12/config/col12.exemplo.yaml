@@ -52,6 +52,7 @@ mosaic:
                              # gravados em 2026-11-14/15 usaram 180 m (alcance real ~167 m: faltou um anel)
   # cartas de teste com mosaico gravado (as demais usam o mosaico calculado na hora)
   stored_cartas: []
+  extra_collections: []      # outras coleções de mosaicos gravados lidas junto com a principal
   features_table: amostras_mosaico_col12v1   # (por versão da tabela de amostras) tabelas com os valores do mosaico nos pontos de amostra (por carta)
   encoding: col12            # col12 = sem saturação das frações/NDFI; col11 = idêntico à Col 11 (só para conferência)
   version: 1                 # versão do mosaico gravado (propriedade mosaic_version); mude ao alterar o
