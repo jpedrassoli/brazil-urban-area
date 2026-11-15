@@ -102,9 +102,14 @@ def on_the_fly(year: int, roi: ee.Geometry, encoding: str = "col12", single_pass
             .select(BANDS))
 
 
-def from_asset(year: int, roi: ee.Geometry, asset: str) -> ee.Image:
-    """Mosaico pré-processado: imagens da coleção com `year` igual, recortadas pela região."""
+def from_asset(year: int, roi: ee.Geometry, asset: str, encoding: str | None = None) -> ee.Image:
+    """Mosaico pré-processado: imagens da coleção com `year` igual, recortadas pela região.
+
+    Com `encoding`, usa só as imagens com `mosaic_encoding` igual (evita misturar mosaicos de
+    teste gravados com outra codificação na mesma coleção)."""
     col = ee.ImageCollection(asset).filter(ee.Filter.eq("year", year)).filterBounds(roi)
+    if encoding:
+        col = col.filter(ee.Filter.eq("mosaic_encoding", encoding))
     # mosaic() devolve a projeção padrão; a grade de 30 m EPSG:4326 é imposta na amostragem e na
     # exportação (scale=30), igual ao mosaico calculado na hora.
     return col.mosaic().select(BANDS)
@@ -117,7 +122,9 @@ def get(year: int, roi: ee.Geometry, cfg: dict | None = None) -> ee.Image:
     if m["source"] == "on_the_fly":
         img = on_the_fly(year, roi, m.get("encoding", "col12"), m.get("single_pass", True))
     elif m["source"] == "asset":
-        img = from_asset(year, roi, m.get("asset") or config.asset_path("mosaicos", cfg=cfg))
+        # na nossa coleção, filtra pela codificação; num mosaico externo (ex.: o oficial) não há essa propriedade
+        img = from_asset(year, roi, m.get("asset") or config.asset_path("mosaicos", cfg=cfg),
+                         None if m.get("asset") else m.get("encoding", "col12"))
     else:
         raise ValueError(f"mosaic.source desconhecido: {m['source']}")
     return img.set("year", year, "mosaic_source", m["source"], "mosaic_encoding", m.get("encoding", "col12"))
