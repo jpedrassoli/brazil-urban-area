@@ -33,6 +33,8 @@ P1090_BANDS = ["EVI", "EVI2"]
 RAW_BANDS = ["EBBI"]
 
 # Ordem final das 42 bandas (a mesma lista `bands` de classification_batch.js)
+GRID_DEG = 0.00026949458523585647   # 30 m em graus (grade EPSG:4326 alinhada à origem)
+
 BANDS = MEDIAN_BANDS + [
     "EVI_p10", "EVI_p90", "EVI2_p10", "EVI2_p90", "EVI_dif9010", "EVI2_dif9010",
     "EBBI", "EBBI_p25", "EBBI_p75", "EBBI_dif7525", "EBBI_p90",
@@ -147,10 +149,20 @@ def get(year: int, roi: ee.Geometry, cfg: dict | None = None, carta: str | None 
 
 
 def mask_with_margin(cfg: dict) -> ee.Image:
-    """Máscara espacial ampliada pela margem (`mosaic.mask_margin_m`): onde o mosaico é gravado."""
+    """Máscara espacial ampliada pela margem: onde o mosaico é gravado.
+
+    A margem é em PIXELS da grade de 30 m (`mosaic.mask_margin_px`, padrão = raio do kernel do pré-filtro + 1),
+    calculada nessa grade. Uma margem em metros (`mask_margin_m`, usada nos mosaicos de 2026-11-14/15) alcança só
+    ~167 m na exportação, menos que o kernel circle(6 px) do pré-filtro (até 180 m no sentido norte-sul): faltava um
+    anel de pixels que entra na média de vizinhança das bordas da máscara."""
     p = cfg["postprocess"]
-    margin = cfg["mosaic"].get("mask_margin_m", 180)
-    return ee.Image(p["spatial_mask"]).gte(1).unmask(0).focalMax(margin, "circle", "meters").selfMask()
+    m = cfg["mosaic"]
+    base = ee.Image(p["spatial_mask"]).gte(1).unmask(0)
+    if "mask_margin_px" not in m and "mask_margin_m" in m:      # mosaicos antigos (margem em metros)
+        return base.focalMax(m["mask_margin_m"], "circle", "meters").selfMask()
+    px = m.get("mask_margin_px", p["kernel_radius_px"] + 1)
+    return (base.focalMax(px, "circle", "pixels")
+            .reproject(crs="EPSG:4326", crsTransform=[GRID_DEG, 0, 0, 0, -GRID_DEG, 0]).selfMask())
 
 
 def export_spec(year: int, carta: str, cfg: dict | None = None, region: ee.Geometry | None = None,
@@ -177,7 +189,8 @@ def export_spec(year: int, carta: str, cfg: dict | None = None, region: ee.Geome
         "year": year, "grid": carta, "collection_id": cfg["collection"], "theme": "Urban Area",
         "product_type": "mosaic", "mosaic_encoding": encoding, "mosaic_version": m.get("version", 1),
         "bands": len(BANDS),
-        "masked": int(bool(masked)), "mask_margin_m": m.get("mask_margin_m", 180) if masked else 0,
+        "masked": int(bool(masked)),
+        "mask_margin": (f"{m['mask_margin_px']} px" if "mask_margin_px" in m else f"{m.get('mask_margin_m', 180)} m") if masked else "0",
         "code_version": config.code_version(),
         "system:time_start": ee.Date.fromYMD(year, 1, 1).millis(),
     })

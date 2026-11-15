@@ -48,7 +48,8 @@ mosaic:
   asset: null                # ImageCollection com mosaicos pré-processados; vazio = <destino>/mosaicos
   single_pass: true          # mediana e percentis numa passada por coleção (mesmo resultado, menos trabalho)
   store_masked: true         # ao gravar, só dentro da máscara espacial + margem (economiza espaço)
-  mask_margin_m: 180         # margem = raio do kernel de vizinhança do pré-filtro (6 px)
+  mask_margin_px: 7          # margem em pixels de 30 m = raio do kernel do pré-filtro (6 px) + 1. Os mosaicos
+                             # gravados em 2026-11-14/15 usaram 180 m (alcance real ~167 m: faltou um anel)
   # cartas de teste com mosaico gravado (as demais usam o mosaico calculado na hora)
   stored_cartas: []
   features_table: amostras_mosaico_col12v1   # (por versão da tabela de amostras) tabelas com os valores do mosaico nos pontos de amostra (por carta)
