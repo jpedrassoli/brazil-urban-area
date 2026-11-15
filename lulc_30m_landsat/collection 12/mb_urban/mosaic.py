@@ -202,11 +202,14 @@ def export_spec(year: int, carta: str, cfg: dict | None = None, region: ee.Geome
         crs="EPSG:4326", crsTransform=[GRID_DEG, 0, 0, 0, -GRID_DEG, 0], maxPixels=1e13))
 
 
-def ring_export_spec(year: int, carta: str, cfg: dict | None = None):
+def ring_export_spec(year: int, carta: str, cfg: dict | None = None, margin_px: int | None = None):
     """Complemento de um mosaico gravado com a margem antiga (180 m): grava só o anel que faltou até a margem
     em pixels (`mask_margin_px`), com as mesmas propriedades de ano, codificação e versão. A leitura
     (`from_asset`) junta os dois sem sobreposição. Nada é apagado nem sobrescrito."""
-    cfg = cfg or config.load()
+    import copy
+    cfg = copy.deepcopy(cfg or config.load())
+    if margin_px is not None:                       # anel até exatamente o alcance do kernel (ex.: 6 px)
+        cfg["mosaic"]["mask_margin_px"] = margin_px
     collection = cfg["mosaic"].get("asset") or config.asset_path("mosaicos", cfg=cfg)
     old = ee.Image(f"{collection}/mosaic_{year}_{carta}").select(0).mask().unmask(0)
     return export_spec(year, carta, cfg, suffix="_anel", extra_mask=old.Not(),
