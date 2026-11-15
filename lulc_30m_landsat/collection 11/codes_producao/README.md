@@ -68,6 +68,8 @@ de 2026-05-25, a lista de cartas. São parâmetros de cada lote, não mudanças 
    treino** (`type = classification`) e **20% para validação** (`type = validation`), gravando
    `stable_samples_by_range_merged_v1`. É a tabela que a classificação lê.
 
+A tabela final de amostras também está publicada como CSV em [`../dados`](../dados), com instruções para subir no Earth Engine.
+
 ## Lacunas conhecidas
 
 - **Montagem de `stable_samples_by_range_v2`, `v2_1` e `v2_1_adhoc`:** os scripts de amostragem
