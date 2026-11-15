@@ -20,7 +20,19 @@ Os GeoJSON estão em EPSG:4326, compactados com gzip. As amostras da Col 11 est�
 3. A imagem de limiares (`postprocess.threshold_image`, bandas `percentil` e `threshold`) é gerada da tabela de
    limiares + cartas por `mb_urban.thresholds.image_export_spec` (equivalente a `meanThresholdsByGridAsImage.js`).
 
-## Fora daqui (rasters grandes)
+## Cópias públicas no Earth Engine (inclusive os rasters)
 
-A máscara espacial (`postprocess.spatial_mask`) e o IRS (`postprocess.irs_asset`) são rasters do Brasil a 30 m e
-não cabem no repositório; continuam lidos dos assets de origem.
+Desde 2026-11-15 a configuração lê todos os insumos de terceiros de cópias públicas, feitas no servidor e conferidas
+(mesmo tamanho; 0 pixels diferentes na carta SF-23-Y-C), em `users/pedrassoli-usp/insumos_col12/`:
+
+| Cópia | Original |
+|---|---|
+| `IRS2023_v2` (ImageCollection, 470 imagens) | `users/efjustiniano/IRS2023/IRS2023_v2` |
+| `Mask_Spatial_v9` | `projects/ee-mburb-land-c10/assets/Testes/Mask_Spatial_v9` |
+| `thresholdMedianByCartaImg` | `projects/ee-ers/assets/mapbiomas/col11/thresholdMedianByCartaImg` |
+| `Cartas_250mil_Hex` | `projects/ee-mburb-land/assets/LandsatCol9_Inputs/Cartas_250mil_Hex` (= `ee-mburb-land-c10/.../Inputs/Cartas_250mil_Hex`) |
+| `Cartas_250mil` | `projects/ee-mburb-land-c10/assets/Inputs/Cartas_250mil` |
+
+A máscara espacial e o IRS são rasters do Brasil a 30 m e não ficam neste repositório. A grade de cartas do IBGE
+(`projects/mapbiomas-workspace/AUXILIAR/cartas`) é pública e continua lida da origem. Os caminhos originais estão
+anotados como comentário ao lado de cada chave na configuração, para voltar a eles se preciso.

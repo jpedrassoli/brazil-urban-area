@@ -37,7 +37,7 @@ destinations:
 # Grades
 grids:
   cartas: projects/mapbiomas-workspace/AUXILIAR/cartas        # cartas 1:250.000 (campo grid_name)
-  cartas_hex: projects/ee-mburb-land/assets/LandsatCol9_Inputs/Cartas_250mil_Hex
+  cartas_hex: users/pedrassoli-usp/insumos_col12/Cartas_250mil_Hex   # cópia de ee-mburb-land/.../LandsatCol9_Inputs/Cartas_250mil_Hex
   grid_field: grid_name
   context_buffer_m: 2        # buffer usado na Col 11 para achar as cartas vizinhas (super carta)
 
@@ -111,7 +111,7 @@ postprocess:
   # De onde vem a probabilidade: "classification" (saída do mb_urban.classify, pasta classification.folder)
   # ou "col11" (probabilidades da Col 11 sobre a probMean da Col 10 — reproduz a Col 11)
   probability_source: classification
-  threshold_image: projects/ee-ers/assets/mapbiomas/col11/thresholdMedianByCartaImg   # banda "percentil"
+  threshold_image: users/pedrassoli-usp/insumos_col12/thresholdMedianByCartaImg   # cópia de ee-ers/.../col11/thresholdMedianByCartaImg; banda "percentil"
   neighborhood_factor: 0.7       # pixels abaixo de 0,7 × limiar não entram na média de vizinhança
   final_factor: 0.9              # urbano = média da vizinhança >= 0,9 × limiar
   kernel_radius_px: 6
@@ -121,16 +121,16 @@ postprocess:
     water_min: 50
     veg_min: 60
     other_min: 60
-  irs_asset: users/efjustiniano/IRS2023/IRS2023_v2
+  irs_asset: users/pedrassoli-usp/insumos_col12/IRS2023_v2   # cópia de users/efjustiniano/IRS2023/IRS2023_v2
   irs_min: 400
   irs_last_year: 2023            # o IRS só é aplicado até este ano
-  spatial_mask: projects/ee-mburb-land-c10/assets/Testes/Mask_Spatial_v9
+  spatial_mask: users/pedrassoli-usp/insumos_col12/Mask_Spatial_v9   # cópia de ee-mburb-land-c10/.../Testes/Mask_Spatial_v9
   breakpoint_min_fraction: 0.5
   breakpoint_min_years: 5
   hole_px: 280                   # buracos < 280 px viram urbano
   noise_px: 10                   # manchas < 10 px são removidas
-  cartas_export: projects/ee-mburb-land-c10/assets/Inputs/Cartas_250mil
-  cartas_hex: projects/ee-mburb-land-c10/assets/Inputs/Cartas_250mil_Hex
+  cartas_export: users/pedrassoli-usp/insumos_col12/Cartas_250mil   # cópia de ee-mburb-land-c10/.../Inputs/Cartas_250mil
+  cartas_hex: users/pedrassoli-usp/insumos_col12/Cartas_250mil_Hex   # cópia de ee-mburb-land-c10/.../Inputs/Cartas_250mil_Hex (idêntica)
   folder: mapa_final
   version: 1
   # Teste: processar só dentro da máscara espacial com margem (mesmo mapa final esperado). Desligado.
