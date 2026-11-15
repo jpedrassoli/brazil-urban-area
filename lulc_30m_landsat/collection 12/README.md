@@ -19,9 +19,14 @@ mb_urban/
   landsat.py        coleções Landsat 4–9 (C2): bandas, máscara de nuvem, escala
   indices.py        índices espectrais e mistura espectral (porte de index_lib.js)
   mosaic.py         mosaico anual de 42 bandas; fonte "on_the_fly" ou "asset"
-  tasks.py          acompanhamento de tarefas por conta
+  samples.py        amostras estáveis entre coleções do MapBiomas, treino/validação
+  classify.py       Random Forest por carta e ano: probabilidade de 4 classes
+  tasks.py          fila de exportação e acompanhamento de tarefas
+  col11.py          acesso aos resultados da Col 11, para comparação
 notebooks/          um notebook por etapa, rodável localmente (VS Code) ou no Colab
   01_mosaico.ipynb
+  02_amostras.ipynb
+  03_classificacao.ipynb
 verificacao/        scripts JS para conferir o porte contra a versão de produção da Col 11 no Code Editor
 ```
 
