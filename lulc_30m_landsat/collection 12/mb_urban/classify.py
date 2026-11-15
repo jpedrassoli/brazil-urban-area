@@ -24,8 +24,13 @@ from . import config, grids, mosaic, samples
 PROB_BANDS = ["class1_prob", "class2_prob", "class3_prob", "class4_prob"]
 
 
-def window_for_year(year: int) -> str:
-    """Janela de amostras usada para cada ano (dictOfRanges de classification_batch_v3)."""
+def window_for_year(year: int, cfg: dict | None = None) -> str:
+    """Janela de amostras usada para cada ano (dictOfRanges de classification_batch_v3).
+
+    Com `samples.recent_window`, os anos >= used_from usam a janela recente (Col 12)."""
+    r = (cfg or config.load())["samples"].get("recent_window")
+    if r and year >= r["used_from"]:
+        return f"{r['start']}_to_{r['end']}"
     if year < 1993:
         return "1985_to_2020"
     if year < 2001:
@@ -45,7 +50,7 @@ def training_samples(year: int, context: ee.Geometry, cfg: dict | None = None,
     cfg = cfg or config.load()
     c = cfg["classification"]
     s = ((base if base is not None else samples.table(cfg))
-         .filter(ee.Filter.eq("range", window_for_year(year)))
+         .filter(ee.Filter.eq("range", window_for_year(year, cfg)))
          .filterBounds(context))
     def draw(fc, n):
         # "column": ordena pela coluna `random` gravada na tabela — o mesmo sorteio em qualquer cópia
@@ -116,7 +121,7 @@ def features_export_spec(carta: str, years: list[int] | None = None, cfg: dict |
     m = cfg["mosaic"]
     parts = []
     for y in years:
-        pts = samples.table(cfg).filter(ee.Filter.eq("range", window_for_year(y))).filterBounds(context)
+        pts = samples.table(cfg).filter(ee.Filter.eq("range", window_for_year(y, cfg))).filterBounds(context)
         img = mosaic.on_the_fly(y, context, m.get("encoding", "col12"), m.get("single_pass", True))
         parts.append(img.sampleRegions(collection=pts, scale=30, geometries=True, tileScale=16)
                      .map(lambda f, y=y: f.set("year", y)))

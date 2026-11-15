@@ -78,7 +78,10 @@ def stable_by_years(years: list[int], cfg: dict | None = None) -> ee.Image:
 
 
 def windows(cfg: dict | None = None) -> dict[str, list[int]]:
-    """Janelas de anos: {'1985_to_2020': [1985..2020], '1993_to_2020': [...], ...}."""
+    """Janelas de anos: {'1985_to_2020': [1985..2020], '1993_to_2020': [...], ...}.
+
+    Com `samples.recent_window` ({start, end, used_from}), acrescenta a janela recente (ex.: 2017_to_2025),
+    usada pelos anos >= used_from (veja `classify.window_for_year`)."""
     cfg = cfg or config.load()
     s = cfg["samples"]
     start, end, step = s["window_start"], s["window_end"], s["window_step"]
@@ -88,6 +91,9 @@ def windows(cfg: dict | None = None) -> dict[str, list[int]]:
         years = list(range(i - step, end + 1))
         out[f"{years[0]}_to_{years[-1]}"] = years
         i += step
+    r = s.get("recent_window")
+    if r:
+        out[f"{r['start']}_to_{r['end']}"] = list(range(r["start"], r["end"] + 1))
     return out
 
 
@@ -128,6 +134,42 @@ def split_train_validation(samples: ee.FeatureCollection, cfg: dict | None = Non
         return merged
 
     return ee.FeatureCollection([by_window(w) for w in windows(cfg)]).flatten()
+
+
+def carta_table_id(carta: str, cfg: dict) -> str:
+    return config.asset_path(cfg["samples"]["build_folder"], f"amostras_{carta}", cfg=cfg)
+
+
+def carta_export_spec(carta: str, cfg: dict | None = None):
+    """Tarefa que sorteia as amostras de uma carta (todas as janelas) e separa treino/validação.
+
+    Na Col 11, a tabela final juntava as amostras de todas as cartas; a classificação de uma carta usa
+    as amostras da super carta (ela e as vizinhas). Por isso, gere as cartas de interesse E as vizinhas
+    (`cartas_for_build`) e depois junte tudo com `merge_export_spec`."""
+    cfg = cfg or config.load()
+    fc = split_train_validation(ee.FeatureCollection([create(carta, w, cfg) for w in windows(cfg)]).flatten(), cfg)
+    name = f"amostras_{carta}"
+    asset_id = carta_table_id(carta, cfg)
+    return (name, asset_id, lambda: ee.batch.Export.table.toAsset(
+        collection=fc, description=config.task_description(name, cfg), assetId=asset_id))
+
+
+def cartas_for_build(cartas: list[str], cfg: dict | None = None) -> list[str]:
+    """As cartas e todas as vizinhas das suas super cartas (cartas cujas amostras entram no treino)."""
+    cfg = cfg or config.load()
+    field = cfg["grids"]["grid_field"]
+    names = ee.FeatureCollection([grids.context_fc(c, cfg) for c in cartas]).flatten().aggregate_array(field)
+    return sorted(set(names.getInfo()))
+
+
+def merge_export_spec(cartas: list[str], cfg: dict | None = None):
+    """Tarefa que junta as tabelas por carta na tabela final (`samples.table`)."""
+    cfg = cfg or config.load()
+    fc = ee.FeatureCollection([ee.FeatureCollection(carta_table_id(c, cfg)) for c in cartas]).flatten()
+    asset_id = cfg["samples"]["table"]
+    name = asset_id.rsplit("/", 1)[-1]
+    return (name, asset_id, lambda: ee.batch.Export.table.toAsset(
+        collection=fc, description=config.task_description(name, cfg), assetId=asset_id))
 
 
 def table(cfg: dict | None = None) -> ee.FeatureCollection:

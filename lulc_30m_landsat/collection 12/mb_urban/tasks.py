@@ -66,10 +66,12 @@ def asset_exists(asset_id: str) -> bool:
 
 
 def ensure_folder(asset_id: str) -> None:
-    """Cria (se faltar) a pasta que vai receber o asset. Não apaga nem sobrescreve nada."""
+    """Cria (se faltar) a pasta que vai receber o asset e as pastas acima. Não apaga nem sobrescreve nada."""
     parent = asset_id.rsplit("/", 1)[0]
-    if not asset_exists(parent):
-        ee.data.createAsset({"type": "FOLDER"}, parent)
+    if parent.endswith("/assets") or asset_exists(parent):
+        return
+    ensure_folder(parent)
+    ee.data.createAsset({"type": "FOLDER"}, parent)
 
 
 def ensure_collection(path: str) -> None:

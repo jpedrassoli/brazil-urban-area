@@ -51,15 +51,18 @@ mosaic:
   mask_margin_m: 180         # margem = raio do kernel de vizinhança do pré-filtro (6 px)
   # cartas de teste com mosaico gravado (as demais usam o mosaico calculado na hora)
   stored_cartas: []
-  features_table: amostras_mosaico   # tabelas com os valores do mosaico nos pontos de amostra (por carta)
+  features_table: amostras_mosaico_col12v1   # (por versão da tabela de amostras) tabelas com os valores do mosaico nos pontos de amostra (por carta)
   encoding: col12            # col12 = sem saturação das frações/NDFI; col11 = idêntico à Col 11 (só para conferência)
   version: 1                 # versão do mosaico gravado (propriedade mosaic_version); mude ao alterar o
                              # método do mosaico: a leitura só usa mosaicos desta versão e codificação
 
 # Amostras estáveis (porte de samplesCreation_v4.js + mb_batch/collections.js + visSamplesByGrid_v2.js)
 samples:
-  reference_collection: 10           # coleção cujo valor de classe é mantido onde há estabilidade
-  stability_collections: [6, 7, 8, 9, 10]
+  # Método da Col 12 (decidido em 2026-11-15): Col 11 entra na estabilidade e há uma janela recente até 2025.
+  # Para reproduzir a Col 11: reference_collection 10, stability_collections [6..10], stability_mode all,
+  # sem recent_window e com a tabela da Col 11.
+  reference_collection: 11           # coleção cujo valor de classe é mantido onde há estabilidade
+  stability_collections: [6, 7, 8, 9, 10, 11]
   lulc_assets:                        # coleções integradas do MapBiomas Brasil
     6: projects/mapbiomas-public/assets/brazil/lulc/collection6/mapbiomas_collection60_integration_v1
     7: projects/mapbiomas-public/assets/brazil/lulc/collection7_1/mapbiomas_collection71_integration_v1
@@ -70,18 +73,23 @@ samples:
   lulc_last_year: {6: 2020, 7: 2021, 8: 2022, 9: 2023, 10: 2024, 11: 2025}   # último ano de cada coleção
   # "all" (Col 11): todas as stability_collections em todos os anos; "available": em cada ano, só as que o cobrem
   # (permite janelas até o último ano da coleção mais recente)
-  stability_mode: all
+  stability_mode: available
   min_collections: 1                  # no modo "available", mínimo de coleções que precisam cobrir o ano
   window_start: 1985
   window_end: 2020                    # as janelas vão de ano inicial até este ano
   window_step: 8                      # 1985, 1993, 2001, 2009
+  # janela recente: estável entre as coleções disponíveis em cada ano (em 2025 só a Col 11) e ao longo de
+  # 2017-2025; usada pelos anos >= used_from (treino e validação)
+  recent_window: {start: 2017, end: 2025, used_from: 2021}
   points_per_class: 250
   seed: 42
   train_fraction: 0.8
-  # Tabela de amostras usada pela classificação: cópia da tabela de produção da Col 11 (mesmo sorteio com
-  # sample_order: column). Para reproduzir a Col 11 pixel a pixel, use a original:
-  # projects/ee-ers/assets/mapbiomas/col11/samples/stable_samples_by_range_merged_v1 com sample_order: ee_random_column
-  table: projects/seu-projeto-do-cloud/assets/amostras_col11   # suba o CSV de collection 11/dados
+  # Tabela de amostras usada pela classificação, gerada por samples.carta_export_spec (uma tabela por carta em
+  # build_folder) + samples.merge_export_spec. Para reproduzir a Col 11 pixel a pixel, use a tabela original
+  # projects/ee-ers/assets/mapbiomas/col11/samples/stable_samples_by_range_merged_v1 (CSV em collection 11/dados)
+  # com sample_order: ee_random_column e as opções da Col 11 acima.
+  build_folder: amostras_col12/por_carta_v1
+  table: projects/seu-projeto-do-cloud/assets/amostras_col12/amostras_col12_v1
 
 # Classificação (porte de classification_batch_v3.js + class_lib.js)
 classification:
