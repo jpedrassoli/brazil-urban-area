@@ -77,9 +77,41 @@ def _log(event: dict, log_name: str) -> None:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 
-def _active_descriptions() -> dict[str, str]:
-    return {t["description"]: t["state"] for t in ee.data.getTaskList()
-            if t.get("state") in ("READY", "RUNNING")}
+# O projeto do Cloud pode ser compartilhado por muita gente, e a lista de tarefas do projeto não diz
+# quem criou cada uma. Por isso a fila registra localmente as tarefas que ELA iniciou em cada conta
+# (logs/registro_<conta>.json) e só conta essas no limite de tarefas simultâneas da conta.
+def _registry_path(account: str) -> Path:
+    return LOG_DIR / f"registro_{account}.json"
+
+
+def _load_registry(account: str) -> dict[str, dict]:
+    p = _registry_path(account)
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
+def _save_registry(account: str, reg: dict[str, dict]) -> None:
+    LOG_DIR.mkdir(exist_ok=True)
+    _registry_path(account).write_text(json.dumps(reg, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def _refresh(account: str) -> dict[str, dict]:
+    """Atualiza o estado das tarefas registradas desta conta."""
+    reg = _load_registry(account)
+    open_ids = [tid for tid, r in reg.items() if r["estado"] in ("READY", "RUNNING", "INICIADA")]
+    for st in (ee.data.getTaskStatus(open_ids) if open_ids else []):
+        r = reg.get(st["id"])
+        if r is not None:
+            r["estado"] = st.get("state", r["estado"])
+            r["erro"] = st.get("error_message")
+    _save_registry(account, reg)
+    return reg
+
+
+def my_tasks(account: str = "default") -> pd.DataFrame:
+    """Tarefas iniciadas pela fila nesta conta, com o estado atual."""
+    auth.init(account)
+    reg = _refresh(account)
+    return pd.DataFrame([{"id": k, **v} for k, v in reg.items()])
 
 
 def run_queue(specs, account: str = "default", max_concurrent: int | None = None,
@@ -95,10 +127,12 @@ def run_queue(specs, account: str = "default", max_concurrent: int | None = None
     rows = []
 
     while pending or (wait and started):
-        active = _active_descriptions()
+        reg = _refresh(account)
+        active = {r["tarefa"]: r["estado"] for r in reg.values() if r["estado"] in ("READY", "RUNNING", "INICIADA")}
         # acompanha as que este processo iniciou
         if started:
-            states = {t["id"]: t for t in ee.data.getTaskList() if t["id"] in started.values()}
+            states = {tid: {"state": reg[tid]["estado"], "error_message": reg[tid].get("erro")}
+                      for tid in started.values() if tid in reg}
             for name, tid in list(started.items()):
                 t = states.get(tid, {})
                 if t.get("state") in ("COMPLETED", "FAILED", "CANCELLED"):
@@ -121,6 +155,10 @@ def run_queue(specs, account: str = "default", max_concurrent: int | None = None
             task.start()
             attempts[name] = attempts.get(name, 0) + 1
             started[name] = task.id
+            reg = _load_registry(account)
+            reg[task.id] = {"tarefa": name, "asset": asset_id, "estado": "INICIADA", "erro": None,
+                            "criada": dt.datetime.now().isoformat(timespec="seconds")}
+            _save_registry(account, reg)
             _log({"tarefa": name, "estado": "INICIADA", "id": task.id, "asset": asset_id,
                   "conta": account, "tentativa": attempts[name]}, log_name)
             rows.append({"tarefa": name, "estado": "INICIADA", "erro": None})
