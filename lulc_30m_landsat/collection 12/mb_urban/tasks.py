@@ -179,6 +179,26 @@ def run_queue(specs, account: str = "default", max_concurrent: int | None = None
     rows = []
     adopted = False
 
+    # tarefas que já faltaram recurso numa execução anterior: vão direto na alternativa (não repete a grande)
+    falhas_log = LOG_DIR / "falhas.jsonl"
+    if falhas_log.exists():
+        divididas = set()
+        for line in falhas_log.read_text(encoding="utf-8").splitlines():
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if ev.get("tipo") == "recurso":
+                divididas.add(ev.get("tarefa"))
+        for spec in list(pending):
+            if spec[0] in divididas and len(spec) > 3 and spec[3] and not asset_exists(spec[1]):
+                parts = list(spec[3]())
+                pending.remove(spec)
+                for sp in parts:
+                    by_name[sp[0]] = sp
+                pending.extend(parts)
+                _log({"tarefa": spec[0], "acao": f"já dividida antes: usa {len(parts)} tarefas menores"}, log_name)
+
     def handle_failure(name: str, err: str | None):
         kind = classify_error(err)
         spec = by_name.get(name)
@@ -200,7 +220,12 @@ def run_queue(specs, account: str = "default", max_concurrent: int | None = None
             rows.append({"tarefa": name, "estado": "PRECISA DE CORREÇÃO", "erro": err})
 
     while pending or (wait and started):
-        reg = _refresh(account)
+        try:
+            reg = _refresh(account)
+        except Exception as e:                             # queda de rede/serviço: espera e tenta de novo
+            _log({"acao": "falha ao consultar tarefas; tentando de novo", "erro": str(e)[:200]}, log_name)
+            time.sleep(poll_seconds)
+            continue
         active_ids = {r["tarefa"]: tid for tid, r in reg.items() if r["estado"] in ("READY", "RUNNING", "INICIADA")}
         active = set(active_ids)
         if started:
