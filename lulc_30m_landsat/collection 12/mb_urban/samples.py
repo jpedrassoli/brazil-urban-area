@@ -174,6 +174,44 @@ def window_export_spec(carta: str, window: str, cfg: dict):
         collection=fc, description=config.task_description(name, cfg), assetId=asset_id))
 
 
+def stable_image_id(carta: str, window: str, cfg: dict) -> str:
+    return config.asset_path(cfg["samples"]["build_folder"] + "_estaveis", f"estaveis_{carta}__{window}", cfg=cfg)
+
+
+def stable_image_export_spec(carta: str, window: str, cfg: dict):
+    """1º passo do recurso para janelas que estouram o tempo mesmo sozinhas: grava a imagem de classes
+    estáveis da janela na super carta (exportação de imagem roda em blocos, sem o limite do sorteio).
+
+    Grava na mesma grade em que o sorteio direto trabalha (EPSG:4326, 30 m, origem 0)."""
+    from .mosaic import GRID_DEG
+    name = f"estaveis_{carta}__{window}"
+    asset_id = stable_image_id(carta, window, cfg)
+    region = grids.context_fc(carta, cfg).geometry().simplify(5)
+    img = stable_classes(window, cfg).toByte().clip(region)
+    return (name, asset_id, lambda: ee.batch.Export.image.toAsset(
+        image=img, description=config.task_description(name, cfg), assetId=asset_id, region=region.bounds(),
+        crs="EPSG:4326", crsTransform=[GRID_DEG, 0, 0, 0, -GRID_DEG, 0], maxPixels=1e13,
+        pyramidingPolicy={".default": "mode"}))
+
+
+def window_export_spec_from_image(carta: str, window: str, cfg: dict):
+    """2º passo: o mesmo sorteio de `window_export_spec` (semente, região, pontos por classe), mas lendo a
+    imagem gravada no 1º passo. Grava na mesma tabela da parte por janela."""
+    s = cfg["samples"]
+    n = s["points_per_class"]
+    region = grids.context_fc(carta, cfg).geometry().simplify(5)
+    img = ee.Image(stable_image_id(carta, window, cfg)).rename("class").selfMask()
+    pts = img.stratifiedSample(
+        numPoints=n, classBand="class", region=region, scale=30, geometries=True,
+        seed=s["seed"], classValues=CLASSES, classPoints=[n] * len(CLASSES), dropNulls=True, tileScale=16)
+    pts = pts.map(lambda f: f.set("range", window, "grid_name", carta))
+    fc = split_train_validation(pts, cfg)
+    name = f"amostras_{carta}__{window}"
+    asset_id = window_table_id(carta, window, cfg)
+    return (name, asset_id, lambda: ee.batch.Export.table.toAsset(
+        collection=fc, description=config.task_description(name + "_img", cfg), assetId=asset_id))
+
+
 def carta_sources(carta: str, cfg: dict) -> list[str] | None:
     """Tabelas que compõem as amostras da carta: a tabela inteira, ou todas as partes por janela.
     None se ainda não estiver completa."""
