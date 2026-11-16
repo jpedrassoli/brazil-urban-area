@@ -66,6 +66,16 @@ def asset_exists(asset_id: str) -> bool:
         return False
 
 
+def _active_descriptions() -> set[str]:
+    """Descrições das tarefas ativas (aguardando ou rodando) da conta atual, direto do Earth Engine."""
+    try:
+        ops = ee.data.listOperations()
+    except Exception:                                   # sem resposta: não bloqueia o envio
+        return set()
+    return {o.get("metadata", {}).get("description", "") for o in ops
+            if o.get("metadata", {}).get("state") in ("PENDING", "RUNNING")}
+
+
 def ensure_folder(asset_id: str) -> None:
     """Cria (se faltar) a pasta que vai receber o asset e as pastas acima. Não apaga nem sobrescreve nada."""
     parent = asset_id.rsplit("/", 1)[0]
@@ -254,10 +264,13 @@ def run_queue(specs, account: str = "default", max_concurrent: int | None = None
                     rows.append({"tarefa": spec[0], "estado": "JÁ NA FILA (acompanhando)", "erro": None})
             adopted = True
         free = limit - len(active)
+        # o registro local é compartilhado entre processos e pode perder uma atualização: antes de enviar,
+        # confere no próprio Earth Engine se já há tarefa ativa com a mesma descrição (evita enviar em duplicidade)
+        ee_active = _active_descriptions() if (free > 0 and pending) else set()
         while free > 0 and pending:
             spec = pending.pop(0)
             name, asset_id, make = spec[0], spec[1], spec[2]
-            if name in active:
+            if name in active or config.task_description(name, cfg) in ee_active:
                 rows.append({"tarefa": name, "estado": "JÁ NA FILA", "erro": None})
                 continue
             if asset_exists(asset_id):
