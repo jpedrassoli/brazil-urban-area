@@ -83,7 +83,10 @@ def cmd_classificar(args, cfg):
 def cmd_pos(args, cfg):
     import ee
     from . import auth, grids, postprocess, tasks, thresholds
+    base_prob = cfg["classification"]["folder"]
     cfg = config.apply_run(cfg, args.rodada)
+    # o pós lê as probabilidades da pasta base, salvo `--prob-rodada` (rodada em que elas foram gravadas)
+    cfg["classification"]["folder"] = config.apply_run(cfg, args.prob_rodada)["classification"]["folder"]         if args.prob_rodada else base_prob
     auth.init(args.conta, cfg)
     if args.limiar_reserva:
         # Limiar de reserva para cartas sem pontos urbanos: "youden" = mediana nacional do limiar de Youden das
@@ -125,6 +128,7 @@ def main(argv: list[str] | None = None) -> None:
             p.add_argument("--fallback", action="store_true")
         if nome == "pos":
             p.add_argument("--limiar-reserva", metavar="youden|P")
+            p.add_argument("--prob-rodada", help="rodada das probabilidades (padrão: pasta base)")
     a = ap.parse_args(argv)
     cfg = config.load()
     r = {"estado": cmd_estado, "preflight": cmd_preflight, "classificar": cmd_classificar, "pos": cmd_pos}[a.cmd](a, cfg)
