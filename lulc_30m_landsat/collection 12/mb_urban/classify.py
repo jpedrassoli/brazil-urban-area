@@ -84,6 +84,74 @@ def training_samples(year: int, context: ee.Geometry, cfg: dict | None = None,
     return urban.merge(other)
 
 
+_PLAN_CACHE: dict = {}
+
+
+def fallback_cfg(cfg: dict) -> dict:
+    """Opção `classification.sample_fallback` (DESLIGADA por padrão = método da Col 11).
+    enabled: ligar; min_per_class: mínimo de amostras de treino de cada classe na super carta, na janela do ano;
+    extra_per_class: quantas amostras trazer dos anéis quando faltar; rings_km: raios crescentes (buffer da super carta)."""
+    f = {"enabled": False, "min_per_class": 50, "extra_per_class": 200, "rings_km": [50, 100, 200, 400, 800]}
+    f.update(cfg["classification"].get("sample_fallback") or {})
+    return f
+
+
+def fallback_plan(carta: str, cfg: dict | None = None) -> dict:
+    """Para cada janela, as classes (1-4) com menos de `min_per_class` amostras de treino na super carta e o menor
+    anel (km) que alcança o mínimo: {janela: {classe: km}}. Anel None = nem no maior anel há amostras suficientes.
+    Só LÊ o Earth Engine; o resultado fica em cache."""
+    cfg = cfg or config.load()
+    key = (carta, config.config_hash(cfg))
+    if key in _PLAN_CACHE:
+        return _PLAN_CACHE[key]
+    f = fallback_cfg(cfg)
+    ctx = grids.context(carta, cfg)
+    base = samples.table(cfg).filter(ee.Filter.eq("type", "classification"))
+    plan: dict = {}
+    for w in samples.windows(cfg):
+        bw = base.filter(ee.Filter.eq("range", w))
+        h = bw.filterBounds(ctx).aggregate_histogram("class").getInfo() or {}
+        have = {int(float(k)): int(v) for k, v in h.items()}
+        need = {k: None for k in range(1, 5) if have.get(k, 0) < f["min_per_class"]}
+        for km in f["rings_km"]:
+            if all(v is not None for v in need.values()):
+                break
+            hr = bw.filterBounds(ctx.buffer(km * 1000)).aggregate_histogram("class").getInfo() or {}
+            for k in need:
+                if need[k] is None and int(hr.get(str(k), hr.get(float(k), 0)) or 0) >= f["min_per_class"]:
+                    need[k] = km
+        if need:
+            plan[w] = need
+    _PLAN_CACHE[key] = plan
+    return plan
+
+
+def fallback_samples(carta: str, year: int, cfg: dict) -> ee.FeatureCollection | None:
+    """Amostras extras (com valores do mosaico calculado na hora) das classes que faltam na super carta, trazidas
+    do menor anel que as tem. None se nada falta. Opção desligada por padrão."""
+    f = fallback_cfg(cfg)
+    if not f["enabled"]:
+        return None
+    need = fallback_plan(carta, cfg).get(window_for_year(year, cfg))
+    if not need:
+        return None
+    ctx = grids.context(carta, cfg)
+    base = (samples.table(cfg).filter(ee.Filter.eq("type", "classification"))
+            .filter(ee.Filter.eq("range", window_for_year(year, cfg))))
+    parts = []
+    for k, km in need.items():
+        if km is None:
+            continue
+        ck = base.filter(ee.Filter.eq("class", k)).filterBounds(ctx.buffer(km * 1000))
+        parts.append(ck.sort("random").limit(f["extra_per_class"]))
+    if not parts:
+        return None
+    pts = ee.FeatureCollection(parts).flatten()
+    m = cfg["mosaic"]
+    img = mosaic.on_the_fly(year, pts.geometry().bounds(10), m.get("encoding", "col12"), m.get("single_pass", True))
+    return img.sampleRegions(collection=pts, scale=30, geometries=True, tileScale=16)
+
+
 def classify_year(carta: str, year: int, cfg: dict | None = None) -> ee.Image:
     """Probabilidades das 4 classes para uma carta e um ano (byte 0-100)."""
     cfg = cfg or config.load()
@@ -101,6 +169,9 @@ def classify_year(carta: str, year: int, cfg: dict | None = None) -> ee.Image:
     # O Random Forest depende da ORDEM das amostras, e sampleRegions devolve uma ordem que muda com
     # o caminho de cálculo (mosaico na hora ou gravado). "sorted" ordena pela coluna `random` e torna o
     # resultado igual nos dois caminhos; "as_returned" mantém a ordem da Col 11 (reprodução).
+    extra = fallback_samples(carta, year, cfg)
+    if extra is not None:
+        train = train.merge(extra)
     if c.get("training_order", "sorted") == "sorted":
         train = train.sort("random")
     rf = (classifier(cfg)
