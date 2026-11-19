@@ -213,3 +213,88 @@ def html_report(results: list[dict], cfg: dict, title: str = "Avaliação da rod
     path = REPORT_DIR / f"avaliacao_{now:%Y%m%d_%H%M}.html"
     path.write_text("<html><meta charset='utf-8'><body>" + "\n".join(parts) + "</body></html>", encoding="utf-8")
     return path
+
+
+# --- pontos externos de validação (conjunto independente do MapBiomas) --------------------------------------
+# Os pontos do conjunto de 100 mil (interpretação visual, uma classe por ponto e por ano) são independentes das
+# amostras estáveis usadas no treino. A acurácia oficial do mapa usa esse conjunto. Cobre 1985-2018 e tem poucos
+# pontos urbanos por carta: use os resultados agrupados (várias cartas), não por carta.
+EXTERNAL_DEFAULT = {
+    "asset": "projects/mapbiomas-workspace/VALIDACAO/MAPBIOMAS_100K_POINTS_utf8",
+    "urban_label": "Infraestrutura Urbana",
+    "weight_property": "PESO_AMOS",       # peso amostral de cada ponto (desenho estratificado)
+    "years": [1985, 2018],
+}
+
+
+def _external_cfg(cfg: dict) -> dict:
+    return {**EXTERNAL_DEFAULT, **(cfg.get("evaluation", {}).get("external_points") or {})}
+
+
+def external_values(image: ee.Image, carta: str, cfg: dict) -> pd.DataFrame:
+    """Mapa e referência nos pontos externos que caem na carta: uma linha por ponto e ano."""
+    e = _external_cfg(cfg)
+    first, last = e["years"]
+    years = [y for y in config.years(cfg) if first <= y <= last]
+    bands = [f"classification_{y}" for y in years]
+    props = [f"CLASS_{y}" for y in years] + [e["weight_property"]]
+    pts = ee.FeatureCollection(e["asset"]).filterBounds(grids.region(carta, cfg))
+    got = image.select(bands).sampleRegions(collection=pts, properties=props, scale=30, tileScale=8).getInfo()
+    rows = []
+    for i, f in enumerate(got["features"]):
+        p = f["properties"]
+        try:
+            w = float(p.get(e["weight_property"]) or 1)
+        except ValueError:
+            w = 1.0
+        for y in years:
+            rows.append({"carta": carta, "ponto": i, "ano": y, "pred": int(p[f"classification_{y}"]),
+                         "ref": int(p.get(f"CLASS_{y}") == e["urban_label"]), "peso": w})
+    return pd.DataFrame(rows, columns=["carta", "ponto", "ano", "pred", "ref", "peso"])
+
+
+def _metrics_weighted(d: pd.DataFrame) -> dict:
+    def s(mask):
+        return float(d.loc[mask, "peso"].sum())
+    tp, fp = s((d.pred == 1) & (d.ref == 1)), s((d.pred == 1) & (d.ref == 0))
+    fn, tn = s((d.pred == 0) & (d.ref == 1)), s((d.pred == 0) & (d.ref == 0))
+    prec = tp / (tp + fp) if tp + fp else None
+    rec = tp / (tp + fn) if tp + fn else None
+    f1 = 2 * prec * rec / (prec + rec) if prec and rec else None
+    tot = tp + fp + fn + tn
+    return {"acuracia_ponderada": (tp + tn) / tot if tot else None, "precisao_urbano_pond": prec,
+            "recall_urbano_pond": rec, "f1_urbano_pond": f1}
+
+
+def external_accuracy(values: pd.DataFrame, cfg: dict, label: str = "") -> pd.DataFrame:
+    """Acurácia por período nos pontos externos, agrupando todas as cartas de `values`.
+    Traz as métricas sem peso e com o peso amostral, e o IC 95% (Wilson) pelo número de PONTOS distintos."""
+    first, last = _external_cfg(cfg)["years"]
+    rows = []
+    for a, b in cfg["evaluation"]["periods"]:
+        a, b = max(a, first), min(b, last)
+        if a > b or values.empty:
+            continue
+        d = values[(values.ano >= a) & (values.ano <= b)]
+        if d.empty:
+            continue
+        ids = d[["carta", "ponto"]].drop_duplicates()
+        urb = d.loc[d.ref == 1, ["carta", "ponto"]].drop_duplicates()
+        m = _metrics(d["pred"], d["ref"])
+        lo, hi = _wilson(m["acuracia_global"], len(ids))
+        rlo, rhi = _wilson(m["recall_urbano"], len(urb))
+        rows.append({"mapa": label, "periodo": f"{a}-{b}", "pontos": len(ids), "pontos_urbanos": len(urb),
+                     **m, "acuracia_ic95": (lo, hi), "recall_urbano_ic95": (rlo, rhi), **_metrics_weighted(d)})
+    return pd.DataFrame(rows)
+
+
+def evaluate_external(cartas: list[str], cfg: dict | None = None, suffix: str = "") -> dict:
+    """Compara o mapa da Col 12 e o de referência (Col 11) nos pontos externos das cartas dadas.
+    Devolve {"col12": valores, "col11": valores, "acuracia": tabela agrupada, "pontos_por_carta": tabela}."""
+    cfg = cfg or config.load()
+    v12 = pd.concat([external_values(map_asset(c, cfg, suffix), c, cfg) for c in cartas], ignore_index=True)
+    v11 = pd.concat([external_values(reference_map(c, cfg), c, cfg) for c in cartas], ignore_index=True)
+    acc = pd.concat([external_accuracy(v12, cfg, "Col 12"), external_accuracy(v11, cfg, "Col 11")], ignore_index=True)
+    n = (v12.groupby("carta").agg(pontos=("ponto", "nunique"))
+         .join(v12[v12.ref == 1].groupby("carta").agg(pontos_urbanos_algum_ano=("ponto", "nunique"))).fillna(0))
+    return {"col12": v12, "col11": v11, "acuracia": acc, "pontos_por_carta": n}
