@@ -231,16 +231,26 @@ def _external_cfg(cfg: dict) -> dict:
     return {**EXTERNAL_DEFAULT, **(cfg.get("evaluation", {}).get("external_points") or {})}
 
 
-def external_values(image: ee.Image, carta: str, cfg: dict) -> pd.DataFrame:
-    """Mapa e referência nos pontos externos que caem na carta: uma linha por ponto e ano."""
+def external_values(image: ee.Image, carta: str, cfg: dict, tolerance_px: int = 0) -> pd.DataFrame:
+    """Mapa e referência nos pontos externos que caem na carta: uma linha por ponto e ano.
+
+    `tolerance_px` > 0 acrescenta a coluna `pred_tol`, a leitura com tolerância posicional: o ponto pode estar
+    deslocado até `tolerance_px` pixels (vizinhança quadrada). Num ponto urbano da referência vale urbano se
+    ALGUM pixel vizinho for urbano no mapa; num ponto não urbano vale não urbano se ALGUM vizinho for não urbano.
+    É simétrica (não dilata o mapa): corrige só a incerteza de posição, e vale para qualquer mapa."""
     e = _external_cfg(cfg)
     first, last = e["years"]
     years = [y for y in config.years(cfg) if first <= y <= last]
     bands = [f"classification_{y}" for y in years]
     props = [f"CLASS_{y}" for y in years] + [e["weight_property"], "TARGET_FID"]
     pts = ee.FeatureCollection(e["asset"]).filterBounds(grids.region(carta, cfg))
-    got = image.select(bands).sampleRegions(collection=pts, properties=props, scale=30, tileScale=8,
-                                            geometries=True).getInfo()
+    img = image.select(bands)
+    if tolerance_px:
+        mx = img.focalMax(tolerance_px, "square", "pixels").rename([f"mx_{b}" for b in bands])
+        mn = img.focalMin(tolerance_px, "square", "pixels").rename([f"mn_{b}" for b in bands])
+        img = img.addBands(mx).addBands(mn)
+    got = img.sampleRegions(collection=pts, properties=props, scale=30, tileScale=8,
+                            geometries=True).getInfo()
     rows = []
     for i, f in enumerate(got["features"]):
         p = f["properties"]
@@ -250,10 +260,14 @@ def external_values(image: ee.Image, carta: str, cfg: dict) -> pd.DataFrame:
             w = 1.0
         lon, lat = (f.get("geometry") or {}).get("coordinates", [None, None])
         for y in years:
-            rows.append({"carta": carta, "ponto": i, "id_ponto": p.get("TARGET_FID"), "lon": lon, "lat": lat,
-                         "ano": y, "pred": int(p[f"classification_{y}"]),
-                         "ref": int(p.get(f"CLASS_{y}") == e["urban_label"]), "peso": w})
-    return pd.DataFrame(rows, columns=["carta", "ponto", "id_ponto", "lon", "lat", "ano", "pred", "ref", "peso"])
+            ref = int(p.get(f"CLASS_{y}") == e["urban_label"])
+            row = {"carta": carta, "ponto": i, "id_ponto": p.get("TARGET_FID"), "lon": lon, "lat": lat,
+                   "ano": y, "pred": int(p[f"classification_{y}"]), "ref": ref, "peso": w}
+            if tolerance_px:
+                row["pred_tol"] = int(p[f"mx_classification_{y}"]) if ref else int(p[f"mn_classification_{y}"])
+            rows.append(row)
+    cols = ["carta", "ponto", "id_ponto", "lon", "lat", "ano", "pred", "ref", "peso"] + (["pred_tol"] if tolerance_px else [])
+    return pd.DataFrame(rows, columns=cols)
 
 
 def _metrics_weighted(d: pd.DataFrame) -> dict:
@@ -269,7 +283,7 @@ def _metrics_weighted(d: pd.DataFrame) -> dict:
             "recall_urbano_pond": rec, "f1_urbano_pond": f1}
 
 
-def external_accuracy(values: pd.DataFrame, cfg: dict, label: str = "") -> pd.DataFrame:
+def external_accuracy(values: pd.DataFrame, cfg: dict, label: str = "", pred_col: str = "pred") -> pd.DataFrame:
     """Acurácia por período nos pontos externos, agrupando todas as cartas de `values`.
     Traz as métricas sem peso e com o peso amostral, e o IC 95% (Wilson) pelo número de PONTOS distintos."""
     first, last = _external_cfg(cfg)["years"]
@@ -283,6 +297,7 @@ def external_accuracy(values: pd.DataFrame, cfg: dict, label: str = "") -> pd.Da
             continue
         ids = d[["carta", "ponto"]].drop_duplicates()
         urb = d.loc[d.ref == 1, ["carta", "ponto"]].drop_duplicates()
+        d = d.assign(pred=d[pred_col])
         m = _metrics(d["pred"], d["ref"])
         lo, hi = _wilson(m["acuracia_global"], len(ids))
         rlo, rhi = _wilson(m["recall_urbano"], len(urb))
@@ -291,13 +306,18 @@ def external_accuracy(values: pd.DataFrame, cfg: dict, label: str = "") -> pd.Da
     return pd.DataFrame(rows)
 
 
-def evaluate_external(cartas: list[str], cfg: dict | None = None, suffix: str = "") -> dict:
+def evaluate_external(cartas: list[str], cfg: dict | None = None, suffix: str = "", tolerance_px: int = 0) -> dict:
     """Compara o mapa da Col 12 e o de referência (Col 11) nos pontos externos das cartas dadas.
+    Com `tolerance_px` > 0, devolve também a acurácia com tolerância posicional (linhas "(tol N px)").
     Devolve {"col12": valores, "col11": valores, "acuracia": tabela agrupada, "pontos_por_carta": tabela}."""
     cfg = cfg or config.load()
-    v12 = pd.concat([external_values(map_asset(c, cfg, suffix), c, cfg) for c in cartas], ignore_index=True)
-    v11 = pd.concat([external_values(reference_map(c, cfg), c, cfg) for c in cartas], ignore_index=True)
-    acc = pd.concat([external_accuracy(v12, cfg, "Col 12"), external_accuracy(v11, cfg, "Col 11")], ignore_index=True)
+    v12 = pd.concat([external_values(map_asset(c, cfg, suffix), c, cfg, tolerance_px) for c in cartas], ignore_index=True)
+    v11 = pd.concat([external_values(reference_map(c, cfg), c, cfg, tolerance_px) for c in cartas], ignore_index=True)
+    parts = [external_accuracy(v12, cfg, "Col 12"), external_accuracy(v11, cfg, "Col 11")]
+    if tolerance_px:
+        parts += [external_accuracy(v12, cfg, f"Col 12 (tol {tolerance_px} px)", "pred_tol"),
+                  external_accuracy(v11, cfg, f"Col 11 (tol {tolerance_px} px)", "pred_tol")]
+    acc = pd.concat(parts, ignore_index=True)
     n = (v12.groupby("carta").agg(pontos=("ponto", "nunique"))
          .join(v12[v12.ref == 1].groupby("carta").agg(pontos_urbanos_algum_ano=("ponto", "nunique"))).fillna(0))
     return {"col12": v12, "col11": v11, "acuracia": acc, "pontos_por_carta": n}
@@ -324,13 +344,16 @@ def carta_metrics(carta: str, result: dict, v12: pd.DataFrame, v11: pd.DataFrame
             put(f"{tag}_n_amostras", int(r["amostras"]))
             put(f"{tag}_n_urb", int(r["amostras_urbanas"]))
     for versao, vals in (("col12", v12), ("col11", v11)):
-        acc = external_accuracy(vals[vals.carta == carta], cfg, versao)
-        for _, r in acc.iterrows():
-            tag = f"ext_{versao}_{r['periodo'].replace('-', '_')}"
-            for m in ("acuracia_global", "precisao_urbano", "recall_urbano", "f1_urbano", "acuracia_ponderada"):
-                put(f"{tag}_{m}", r[m])
-            put(f"{tag}_n_pts", int(r["pontos"]))
-            put(f"{tag}_n_urb", int(r["pontos_urbanos"]))
+        for prefixo, col in (("ext", "pred"), ("exttol", "pred_tol")):
+            if col not in vals.columns:
+                continue
+            acc = external_accuracy(vals[vals.carta == carta], cfg, versao, col)
+            for _, r in acc.iterrows():
+                tag = f"{prefixo}_{versao}_{r['periodo'].replace('-', '_')}"
+                for m in ("acuracia_global", "precisao_urbano", "recall_urbano", "f1_urbano", "acuracia_ponderada"):
+                    put(f"{tag}_{m}", r[m])
+                put(f"{tag}_n_pts", int(r["pontos"]))
+                put(f"{tag}_n_urb", int(r["pontos_urbanos"]))
     ar = result["area"]
     last = int(ar.index.max())
     put(f"area_{last}_col12_km2", float(ar.loc[last, "col12"]))
