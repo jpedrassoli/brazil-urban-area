@@ -46,6 +46,19 @@ def asset_path(*parts: str, cfg: dict | None = None) -> str:
     return "/".join([destination_root(cfg), *[p.strip("/") for p in parts]])
 
 
+def apply_run(cfg: dict, rodada: str | None) -> dict:
+    """Cópia da configuração com as pastas de saída da classificação e do mapa final sufixadas pela rodada
+    (`probabilidades__<rodada>`, `mapa_final__<rodada>`). Sem rodada (ou "base") nada muda: os assets já existentes
+    são a rodada "base". Nunca sobrescreve outra rodada, porque cada uma grava na sua pasta."""
+    import copy
+    out = copy.deepcopy(cfg)
+    if rodada and rodada != "base":
+        out["classification"]["folder"] = f"{cfg['classification']['folder']}__{rodada}"
+        out["postprocess"]["folder"] = f"{cfg['postprocess']['folder']}__{rodada}"
+        out["rodada"] = rodada
+    return out
+
+
 def task_description(name: str, cfg: dict | None = None) -> str:
     """Nome da tarefa no Earth Engine: prefixo da configuração + nome (máx. 100 caracteres)."""
     cfg = cfg or load()

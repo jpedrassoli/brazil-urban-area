@@ -60,6 +60,18 @@ class Limiares(unittest.TestCase):
         self.assertEqual(int(b["n_years_available"]), 0)
 
 
+class Rodadas(unittest.TestCase):
+    def test_base_nao_muda_nada(self):
+        self.assertEqual(config.apply_run(CFG, None)["classification"]["folder"], CFG["classification"]["folder"])
+        self.assertEqual(config.apply_run(CFG, "base")["postprocess"]["folder"], CFG["postprocess"]["folder"])
+
+    def test_rodada_usa_pastas_proprias_sem_alterar_a_original(self):
+        r = config.apply_run(CFG, "fallback1")
+        self.assertTrue(r["classification"]["folder"].endswith("__fallback1"))
+        self.assertTrue(r["postprocess"]["folder"].endswith("__fallback1"))
+        self.assertFalse(CFG["classification"]["folder"].endswith("__fallback1"))
+
+
 class Registro(unittest.TestCase):
     def test_ficha_sem_earth_engine(self):
         rec = registry.provenance("SF-23-Y-C", CFG, with_ee=False)
