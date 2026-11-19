@@ -1,6 +1,8 @@
 """Pré-voo: confere, ANTES de classificar, se cada carta tem o que a classificação precisa.
 
-Para cada carta devolve uma linha com o estado ("ok", "classe_ausente", "sem_limiar", "sem_mosaico") e o motivo.
+Para cada carta devolve uma linha com o estado ("ok", "resolvido_por_fallback", "classe_ausente", "sem_limiar",
+"sem_mosaico") e o motivo. "resolvido_por_fallback": faltam classes no treino, mas o fallback de amostras por anéis
+(`classification.sample_fallback`, ligado) acha amostras suficientes em algum anel.
 Uma classe ausente no treino de uma janela é o caso que desloca as bandas de probabilidade (corrigido em
 `classify.classify_year`) e deixa o urbano em zero: por isso é alerta e nunca passa em silêncio.
 Só LÊ o Earth Engine.
@@ -10,7 +12,7 @@ from __future__ import annotations
 import ee
 import pandas as pd
 
-from . import config, grids, mosaic, registry
+from . import classify, config, grids, mosaic, registry
 
 CLASSES = ("1", "2", "3", "4")      # 1 urbano, 2 vegetação, 3 água, 4 agropecuária
 
@@ -25,6 +27,15 @@ def check_carta(carta: str, cfg: dict | None = None, table: ee.FeatureCollection
         if faltam:
             problemas.append(f"janela {janela}: sem classes {','.join(faltam)} no treino")
             estado = "classe_ausente"
+    if estado == "classe_ausente" and classify.fallback_cfg(cfg)["enabled"]:
+        plano = classify.fallback_plan(carta, cfg)
+        sem_anel = [f"{j}: classe {k}" for j, d in plano.items() for k, km in d.items() if km is None]
+        if sem_anel:
+            problemas.append("fallback sem amostras suficientes nem no maior anel (" + "; ".join(sem_anel) + ")")
+        else:
+            usos = sorted({f"classe {k} até {km} km" for d in plano.values() for k, km in d.items()})
+            problemas.append("fallback de amostras cobre: " + ", ".join(usos))
+            estado = "resolvido_por_fallback"
     limiar = ee.Image(cfg["postprocess"]["threshold_image"]).select("percentil").reduceRegion(
         ee.Reducer.mean(), grids.region(carta, cfg), 1000, maxPixels=1e9).getInfo().get("percentil")
     if limiar is None:
