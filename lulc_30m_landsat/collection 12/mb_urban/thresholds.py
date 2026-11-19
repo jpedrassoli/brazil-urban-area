@@ -255,3 +255,21 @@ def col11_table() -> pd.DataFrame:
     """Tabela de limiares da Col 11 (para conferência)."""
     fc = ee.FeatureCollection("projects/ee-ers/assets/mapbiomas/col11/thresholdMedianByCarta")
     return ee.data.computeFeatures({"expression": fc, "fileFormat": "PANDAS_DATAFRAME"}).drop(columns=["geo"], errors="ignore")
+
+
+def regional_fill(carta: str, col11: pd.DataFrame, cfg: dict | None = None, rings_km: tuple = (100, 200, 400),
+                  min_cartas: int = 3) -> dict:
+    """Limiar de reserva para uma carta SEM pontos urbanos de validação (ex.: NA-22-V-B): mediana dos limiares das
+    cartas com dados (`n_years_available > 0`) dentro do menor anel (km ao redor da carta) que tenha pelo menos
+    `min_cartas`. `col11`: tabela com colunas carta, cutPercentile, threshold, n_years_available (ex.: `col11_table()`
+    ou a tabela recalculada). Devolve {anel_km, n_cartas, cartas, cutPercentile, threshold}. Opção de teste."""
+    cfg = cfg or config.load()
+    field = cfg["grids"]["grid_field"]
+    ctx = grids.context(carta, cfg)
+    valid = col11[col11["n_years_available"] > 0]
+    for km in rings_km:
+        near = grids.cartas_fc(cfg).filterBounds(ctx.buffer(km * 1000)).aggregate_array(field).getInfo()
+        d = valid[valid["carta"].isin(near) & (valid["carta"] != carta)]
+        if len(d) >= min_cartas or km == rings_km[-1]:
+            return {"anel_km": km, "n_cartas": int(len(d)), "cartas": sorted(d["carta"]),
+                    "cutPercentile": float(d["cutPercentile"].median()), "threshold": float(d["threshold"].median())}
