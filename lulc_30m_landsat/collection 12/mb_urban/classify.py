@@ -107,8 +107,21 @@ def classify_year(carta: str, year: int, cfg: dict | None = None) -> ee.Image:
           .train(features=train, classProperty="class", inputProperties=mosaic.BANDS)
           .setOutputMode("MULTIPROBABILITY"))
     probs = img.clip(region).classify(rf).multiply(100).byte().toByte()
-    return (probs.arrayPad([4]).arrayProject([0]).arrayFlatten([PROB_BANDS])
-            .set("year", year, "grid", carta))
+    if c.get("band_labels", "by_class") == "by_position":
+        # comportamento da Col 11 (e da primeira rodada da Col 12): nomeia as bandas pela POSIÇÃO. Se faltar uma
+        # classe no treino, as bandas deslizam (class1_prob deixa de ser urbano). Só para reproduzir a Col 11.
+        return (probs.arrayPad([4]).arrayProject([0]).arrayFlatten([PROB_BANDS])
+                .set("year", year, "grid", carta))
+    # Padrão: nomeia pelas classes que existiam no treino. A saída do Random Forest tem uma posição por classe
+    # presente, em ordem crescente do rótulo; classe ausente no treino fica com probabilidade 0 na banda certa.
+    classes = train.aggregate_array("class").distinct().sort()
+    bands = []
+    for k in range(1, len(PROB_BANDS) + 1):
+        idx = classes.indexOf(k)
+        bands.append(ee.Image(ee.Algorithms.If(idx.gte(0), probs.arrayProject([0]).arrayGet(idx).toByte(),
+                                               ee.Image(0).toByte())))
+    return (ee.Image.cat(bands).rename(PROB_BANDS)
+            .set("year", year, "grid", carta, "train_classes", classes))
 
 
 def features_table_id(carta: str, cfg: dict) -> str:
