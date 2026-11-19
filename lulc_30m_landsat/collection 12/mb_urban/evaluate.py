@@ -237,9 +237,10 @@ def external_values(image: ee.Image, carta: str, cfg: dict) -> pd.DataFrame:
     first, last = e["years"]
     years = [y for y in config.years(cfg) if first <= y <= last]
     bands = [f"classification_{y}" for y in years]
-    props = [f"CLASS_{y}" for y in years] + [e["weight_property"]]
+    props = [f"CLASS_{y}" for y in years] + [e["weight_property"], "TARGET_FID"]
     pts = ee.FeatureCollection(e["asset"]).filterBounds(grids.region(carta, cfg))
-    got = image.select(bands).sampleRegions(collection=pts, properties=props, scale=30, tileScale=8).getInfo()
+    got = image.select(bands).sampleRegions(collection=pts, properties=props, scale=30, tileScale=8,
+                                            geometries=True).getInfo()
     rows = []
     for i, f in enumerate(got["features"]):
         p = f["properties"]
@@ -247,10 +248,12 @@ def external_values(image: ee.Image, carta: str, cfg: dict) -> pd.DataFrame:
             w = float(p.get(e["weight_property"]) or 1)
         except ValueError:
             w = 1.0
+        lon, lat = (f.get("geometry") or {}).get("coordinates", [None, None])
         for y in years:
-            rows.append({"carta": carta, "ponto": i, "ano": y, "pred": int(p[f"classification_{y}"]),
+            rows.append({"carta": carta, "ponto": i, "id_ponto": p.get("TARGET_FID"), "lon": lon, "lat": lat,
+                         "ano": y, "pred": int(p[f"classification_{y}"]),
                          "ref": int(p.get(f"CLASS_{y}") == e["urban_label"]), "peso": w})
-    return pd.DataFrame(rows, columns=["carta", "ponto", "ano", "pred", "ref", "peso"])
+    return pd.DataFrame(rows, columns=["carta", "ponto", "id_ponto", "lon", "lat", "ano", "pred", "ref", "peso"])
 
 
 def _metrics_weighted(d: pd.DataFrame) -> dict:
@@ -298,3 +301,46 @@ def evaluate_external(cartas: list[str], cfg: dict | None = None, suffix: str = 
     n = (v12.groupby("carta").agg(pontos=("ponto", "nunique"))
          .join(v12[v12.ref == 1].groupby("carta").agg(pontos_urbanos_algum_ano=("ponto", "nunique"))).fillna(0))
     return {"col12": v12, "col11": v11, "acuracia": acc, "pontos_por_carta": n}
+
+
+# --- métricas por carta, para registrar no próprio mapa e montar mapas regionais de acurácia ----------------
+def carta_metrics(carta: str, result: dict, v12: pd.DataFrame, v11: pd.DataFrame, cfg: dict) -> dict:
+    """Achata as métricas de UMA carta num dicionário de campos simples (texto/número), pronto para virar
+    propriedades do asset ou uma linha de tabela. Prefixos: `int_` (amostras estáveis internas) e `ext_`
+    (pontos externos do MapBiomas); depois `col12`/`col11`, o período e a métrica. Nunca guarda valor ausente.
+    Os pontos externos de uma carta são poucos: sempre confira `ext_n_pts` e `ext_n_urb` antes de mapear."""
+    out: dict = {"eval_carta": carta, "eval_data": dt.datetime.now().strftime("%Y-%m-%d"),
+                 "eval_code_version": config.code_version(), "eval_config_sha256": config.config_hash(cfg)}
+
+    def put(key, val):
+        if val is not None and val == val:                     # descarta None e NaN
+            out[key] = round(float(val), 4) if isinstance(val, float) else val
+
+    for versao, per in (("col12", result["acuracia_periodo"]), ("col11", result["acuracia_periodo_col11"])):
+        for _, r in per.iterrows():
+            tag = f"int_{versao}_{r['periodo'].replace('-', '_')}"
+            for m in ("acuracia_global", "precisao_urbano", "recall_urbano", "f1_urbano"):
+                put(f"{tag}_{m}", r[m])
+            put(f"{tag}_n_amostras", int(r["amostras"]))
+            put(f"{tag}_n_urb", int(r["amostras_urbanas"]))
+    for versao, vals in (("col12", v12), ("col11", v11)):
+        acc = external_accuracy(vals[vals.carta == carta], cfg, versao)
+        for _, r in acc.iterrows():
+            tag = f"ext_{versao}_{r['periodo'].replace('-', '_')}"
+            for m in ("acuracia_global", "precisao_urbano", "recall_urbano", "f1_urbano", "acuracia_ponderada"):
+                put(f"{tag}_{m}", r[m])
+            put(f"{tag}_n_pts", int(r["pontos"]))
+            put(f"{tag}_n_urb", int(r["pontos_urbanos"]))
+    ar = result["area"]
+    last = int(ar.index.max())
+    put(f"area_{last}_col12_km2", float(ar.loc[last, "col12"]))
+    put(f"area_{last}_col11_km2", float(ar.loc[last, "col11"]))
+    put("concordancia_media_col11", float(result["concordancia_col11"].mean()))
+    return out
+
+
+def write_properties(carta: str, metrics: dict, cfg: dict, suffix: str = "") -> None:
+    """Grava as métricas como propriedades do mapa final da carta (ESCREVE no Earth Engine: só acrescenta ou
+    atualiza essas propriedades, não mexe nos pixels). Use depois de `carta_metrics`."""
+    ee.data.setAssetProperties(config.asset_path(cfg["postprocess"]["folder"], f"mapa_{carta}{suffix}", cfg=cfg),
+                               {k: v for k, v in metrics.items()})
