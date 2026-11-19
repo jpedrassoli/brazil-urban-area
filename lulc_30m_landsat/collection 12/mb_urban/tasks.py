@@ -111,9 +111,79 @@ def _load_registry(account: str) -> dict[str, dict]:
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
 
+def _registry_lock(account: str):
+    """Trava simples (arquivo criado com O_EXCL) para duas filas na mesma conta não se sobrescreverem."""
+    import contextlib
+    import os
+
+    @contextlib.contextmanager
+    def lock():
+        LOG_DIR.mkdir(exist_ok=True)
+        path = LOG_DIR / f"registro_{account}.lock"
+        t0 = time.time()
+        while True:
+            try:
+                fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.close(fd)
+                break
+            except FileExistsError:
+                if time.time() - t0 > 60 or (time.time() - path.stat().st_mtime > 120):   # trava velha: segue
+                    break
+                time.sleep(0.2)
+        try:
+            yield
+        finally:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+    return lock()
+
+
 def _save_registry(account: str, reg: dict[str, dict]) -> None:
-    LOG_DIR.mkdir(exist_ok=True)
-    _registry_path(account).write_text(json.dumps(reg, ensure_ascii=False, indent=1), encoding="utf-8")
+    """Grava mesclando com o que já está no arquivo: entradas acrescentadas por outra fila da mesma conta
+    nunca se perdem (as nossas valem nas chaves em comum)."""
+    with _registry_lock(account):
+        merged = _load_registry(account)
+        merged.update(reg)
+        _registry_path(account).write_text(json.dumps(merged, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def reconcile(account: str, cfg: dict | None = None) -> int:
+    """Reconfirma no Earth Engine as tarefas ATIVAS (aguardando ou rodando) com o prefixo do projeto que nenhum
+    registro local conhece (por exemplo, depois de uma perda do arquivo) e as inclui. Tarefas já terminadas ficam
+    de fora (o asset gravado já basta para a fila pular o trabalho), e as conhecidas por qualquer conta também,
+    pois contas que compartilham o projeto enxergam as tarefas umas das outras. Só LÊ o Earth Engine.
+    Devolve quantas foram acrescentadas."""
+    cfg = cfg or config.load()
+    prefix = cfg.get("task_prefix", "")
+    if not prefix:
+        return 0
+    conhecidas = set()
+    for f in LOG_DIR.glob("registro_*.json"):
+        try:
+            conhecidas |= set(json.loads(f.read_text(encoding="utf-8")))
+        except ValueError:
+            pass
+    reg = {k: None for k in conhecidas}
+    mapa = {"PENDING": "READY", "RUNNING": "RUNNING", "SUCCEEDED": "COMPLETED", "FAILED": "FAILED",
+            "CANCELLED": "CANCELLED", "CANCELLING": "CANCELLED"}
+    novas = {}
+    try:
+        ops = ee.data.listOperations()
+    except Exception:
+        return 0
+    for o in ops:
+        md = o.get("metadata", {})
+        tid = o.get("name", "").rsplit("/", 1)[-1]
+        desc = md.get("description", "")
+        if tid and tid not in reg and desc.startswith(prefix) and md.get("state") in ("PENDING", "RUNNING"):
+            novas[tid] = {"tarefa": desc[len(prefix):], "asset": None, "estado": mapa.get(md.get("state"), "READY"),
+                          "erro": (o.get("error") or {}).get("message"), "criada": (md.get("createTime") or "")[:19],
+                          "origem": "reconciliada"}
+    if novas:
+        _save_registry(account, novas)
+    return len(novas)
 
 
 def _refresh(account: str) -> dict[str, dict]:
@@ -181,6 +251,12 @@ def run_queue(specs, account: str = "default", max_concurrent: int | None = None
     cfg = cfg or config.load()
     config.check_production_code(cfg)
     auth.init(account, cfg)
+    try:
+        n = reconcile(account, cfg)        # tarefas do projeto que o registro local não conhece
+        if n:
+            _log({"estado": "RECONCILIADAS", "quantas": n, "conta": account}, log_name)
+    except Exception:
+        pass
     limit = max_concurrent or cfg["accounts"][account]["max_concurrent"]
     pending = list(specs)
     by_name = {s[0]: s for s in specs}
